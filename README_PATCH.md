@@ -1,17 +1,14 @@
-Patch: recuperação de senha via Supabase no frontend.
+Patch mínimo para corrigir a proteção de rotas em produção.
 
-Arquivos incluídos:
-- frontend/package.json
-- frontend/src/shared/lib/env.ts
-- frontend/src/shared/lib/supabaseBrowser.ts
-- frontend/src/features/auth/types.ts
-- frontend/src/features/auth/index.ts
+Arquivo incluído:
 - frontend/src/app/router.tsx
-- frontend/src/features/auth/pages/ForgotPassword.tsx
-- frontend/src/features/auth/pages/ResetPassword.tsx
-- frontend/src/features/auth/pages/SignIn.tsx
 
-Depois de colar:
-1) rode npm install dentro de frontend
-2) confirme as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no frontend/.env
-3) reinicie o frontend
+O que corrige:
+- impede acesso direto a /cliente/*, /atriz e /adm sem token + user no store
+- redireciona para /sign-in?redirect=... antes de disparar chamadas protegidas
+- respeita papel do usuário (cliente, atriz, adm)
+
+Como aplicar:
+1. Copie o arquivo por cima do projeto atual.
+2. Faça novo build do frontend.
+3. Refaça o deploy no Netlify.
