@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const strongPasswordSchema = z
+export const strongPasswordSchema = z
   .string()
   .min(8, 'Mínimo de 8 caracteres')
   .regex(/[A-Z]/, 'Deve conter pelo menos uma letra maiúscula')
@@ -17,4 +17,9 @@ export const signUpSchema = z.object({
   username: z.string().min(3, 'Mínimo de 3 caracteres').max(80, 'Máximo de 80 caracteres'),
   email: z.string().email('E-mail inválido'),
   password: strongPasswordSchema,
+})
+
+export const changePasswordSchema = z.object({
+  senhaAtual: z.string().min(1, 'Informe a senha atual'),
+  novaSenha: strongPasswordSchema,
 })

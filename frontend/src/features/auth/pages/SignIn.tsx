@@ -1,13 +1,75 @@
-import { useMemo } from 'react'
-import { useSearchParams } from 'react-router'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useLogin } from '@/features/auth/hooks/useLogin'
 import { LoginForm } from '@/features/auth/components/LoginForm'
+import { api } from '@/shared/lib/axios'
+import { supabaseBrowser } from '@/shared/lib/supabaseBrowser'
+import { parseApiError } from '@/shared/utils/parseApiError'
+import { useAuthStore } from '@/shared/stores/useAuthStore'
+import type { LoginResponse } from '@/features/auth/types'
+
+const rolePaths = {
+  cliente: '/cliente/feed',
+  atriz: '/atriz',
+  adm: '/adm',
+} as const
 
 export function SignIn() {
   const mutation = useLogin()
+  const navigate = useNavigate()
+  const setAuth = useAuthStore((s) => s.setAuth)
   const [searchParams] = useSearchParams()
+  const [oauthError, setOauthError] = useState<string | null>(null)
+  const [oauthLoading, setOauthLoading] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    async function hydrateGoogleSession() {
+      if (searchParams.get('oauth') !== 'google') return
+
+      try {
+        setOauthLoading(true)
+        setOauthError(null)
+
+        const { data, error } = await supabaseBrowser.auth.getSession()
+        if (error || !data.session?.access_token) {
+          throw error || new Error('Sessão OAuth não encontrada.')
+        }
+
+        const token = data.session.access_token
+
+        const response = await api.get<LoginResponse>('/auth/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!active) return
+
+        setAuth(token, response.data.user)
+        navigate(rolePaths[response.data.user.role], { replace: true })
+      } catch (error) {
+        if (!active) return
+        setOauthError(parseApiError(error))
+      } finally {
+        if (active) {
+          setOauthLoading(false)
+        }
+      }
+    }
+
+    hydrateGoogleSession()
+    return () => {
+      active = false
+    }
+  }, [navigate, searchParams, setAuth])
 
   const infoMessage = useMemo(() => {
+    if (oauthLoading) {
+      return 'Conectando sua conta Google...'
+    }
+
     const signup = searchParams.get('signup')
     const email = searchParams.get('email')
     const confirmed = searchParams.get('confirmed')
@@ -28,7 +90,7 @@ export function SignIn() {
     }
 
     return null
-  }, [searchParams])
+  }, [oauthLoading, searchParams])
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950">
@@ -44,6 +106,12 @@ export function SignIn() {
             </h1>
             <p className="mt-2 text-sm text-zinc-400">Entre na sua conta</p>
           </div>
+
+          {oauthError && (
+            <p className="mb-5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {oauthError}
+            </p>
+          )}
 
           <LoginForm mutation={mutation} infoMessage={infoMessage} />
         </div>

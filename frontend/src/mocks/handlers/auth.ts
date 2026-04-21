@@ -1,5 +1,10 @@
 import { http, HttpResponse } from 'msw'
-import type { LoginInput, LoginResponse, SignUpInput, SignUpResponse } from '@/features/auth/types'
+import type {
+  LoginInput,
+  LoginResponse,
+  SignUpInput,
+  SignUpResponse,
+} from '@/features/auth/types'
 import { mockUsers } from '@/mocks/data/users'
 
 const BASE_URL = import.meta.env.VITE_API_URL
@@ -33,7 +38,13 @@ export const authHandlers = [
 
     return HttpResponse.json<LoginResponse>({
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, credits: user.credits },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        credits: user.credits,
+      },
     })
   }),
 
@@ -45,13 +56,22 @@ export const authHandlers = [
     }
 
     registeredEmails.add(email)
+
     const id = crypto.randomUUID()
     const token = makeMockJwt({ sub: id, email, role: 'cliente' })
 
     return HttpResponse.json<SignUpResponse>(
       {
+        success: true,
+        requiresEmailConfirmation: false,
         token,
-        user: { id, name: username, email, role: 'cliente', credits: 0 },
+        user: {
+          id,
+          name: username,
+          email,
+          role: 'cliente',
+          credits: 0,
+        },
       },
       { status: 201 }
     )

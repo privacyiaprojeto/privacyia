@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
 import { Home } from '@/features/landing'
-import { SignIn, ForgotPassword, SignUp } from '@/features/auth'
+import { SignIn, ForgotPassword, ResetPassword, SignUp } from '@/features/auth'
 import { ClienteDashboard } from '@/features/cliente'
 import { Feed } from '@/features/cliente/feed'
 import { Descobrir } from '@/features/cliente/descobrir'
@@ -50,6 +50,7 @@ export function Router() {
         <Route path="/" element={<Home />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/sign-up" element={<SignUp />} />
 
         <Route element={<RouteGuard allowedRoles={['cliente']} />}>

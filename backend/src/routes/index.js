@@ -6,6 +6,8 @@ import { galleryRoutes } from './gallery.routes.js'
 import { walletRoutes } from './wallet.routes.js'
 import { notificationsRoutes } from './notifications.routes.js'
 import { healthRoutes } from './health.routes.js'
+import { profileRoutes } from './profile.routes.js'
+import { nsfwRoutes } from './nsfw.routes.js'
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 
 export function registerRoutes(app) {
@@ -18,4 +20,6 @@ export function registerRoutes(app) {
   app.use('/galeria', authMiddleware, galleryRoutes)
   app.use('/carteira', authMiddleware, walletRoutes)
   app.use('/notificacoes', authMiddleware, notificationsRoutes)
+  app.use('/cliente', authMiddleware, profileRoutes)
+  app.use('/nsfw', authMiddleware, nsfwRoutes)
 }

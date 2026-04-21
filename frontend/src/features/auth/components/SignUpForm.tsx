@@ -2,7 +2,11 @@ import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Check, X } from 'lucide-react'
 import type { UseMutationResult } from '@tanstack/react-query'
-import { signUpSchema, type SignUpInput, type SignUpResponse } from '@/features/auth/types'
+import {
+  signUpSchema,
+  type SignUpInput,
+  type SignUpResponse,
+} from '@/features/auth/types'
 import { SocialLogin } from '@/features/auth/components/SocialLogin'
 
 interface PasswordRule {
@@ -11,11 +15,11 @@ interface PasswordRule {
 }
 
 const passwordRules: PasswordRule[] = [
-  { label: 'Mínimo de 8 caracteres', test: (v) => v.length >= 8 },
-  { label: 'Pelo menos uma letra maiúscula', test: (v) => /[A-Z]/.test(v) },
-  { label: 'Pelo menos uma letra minúscula', test: (v) => /[a-z]/.test(v) },
-  { label: 'Pelo menos um número', test: (v) => /[0-9]/.test(v) },
-  { label: 'Pelo menos um símbolo', test: (v) => /[^A-Za-z0-9]/.test(v) },
+  { label: 'Mínimo de 8 caracteres', test: (value) => value.length >= 8 },
+  { label: 'Pelo menos uma maiúscula', test: (value) => /[A-Z]/.test(value) },
+  { label: 'Pelo menos uma minúscula', test: (value) => /[a-z]/.test(value) },
+  { label: 'Pelo menos um número', test: (value) => /[0-9]/.test(value) },
+  { label: 'Pelo menos um símbolo', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ]
 
 interface FloatingInputProps {

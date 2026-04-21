@@ -12,7 +12,7 @@ function mapProfileToUser(profile, fallbackEmail) {
   }
 }
 
-async function ensureProfile({ userId, email, name, role = 'cliente' }) {
+export async function ensureProfile({ userId, email, name, role = 'cliente' }) {
   const payload = {
     id: userId,
     email,
@@ -106,12 +106,68 @@ export async function login(input) {
   const profile = await ensureProfile({
     userId: data.user.id,
     email: data.user.email,
-    name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'Usuário',
+    name:
+      data.user.user_metadata?.name ||
+      data.user.user_metadata?.full_name ||
+      data.user.email?.split('@')[0] ||
+      'Usuário',
     role: data.user.user_metadata?.role || 'cliente',
   })
 
   return {
     token: data.session.access_token,
     user: mapProfileToUser(profile, data.user.email),
+  }
+}
+
+export async function getMeFromAccessToken(authUser) {
+  const { data: profile, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id, name, email, role, credits')
+    .eq('id', authUser.id)
+    .maybeSingle()
+
+  if (error) {
+    throw new ApiError(500, 'Erro ao carregar perfil autenticado.', error)
+  }
+
+  const ensuredProfile = profile || await ensureProfile({
+    userId: authUser.id,
+    email: authUser.email,
+    name:
+      authUser.user_metadata?.name ||
+      authUser.user_metadata?.full_name ||
+      authUser.email?.split('@')[0] ||
+      'Usuário',
+    role: authUser.user_metadata?.role || 'cliente',
+  })
+
+  return {
+    token: null,
+    user: mapProfileToUser(ensuredProfile, authUser.email),
+  }
+}
+
+export async function changePassword({ profileId, email, senhaAtual, novaSenha }) {
+  const { error: signInError } = await supabaseAuth.auth.signInWithPassword({
+    email,
+    password: senhaAtual,
+  })
+
+  if (signInError) {
+    throw new ApiError(401, 'Senha atual incorreta.')
+  }
+
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(profileId, {
+    password: novaSenha,
+  })
+
+  if (updateError) {
+    throw new ApiError(500, 'Não foi possível alterar a senha.', updateError)
+  }
+
+  return {
+    success: true,
+    message: 'Senha alterada com sucesso.',
   }
 }
