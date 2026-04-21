@@ -1,0 +1,117 @@
+import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
+import { env } from '../config/env.js'
+import { ApiError } from '../utils/apiError.js'
+
+function mapProfileToUser(profile, fallbackEmail) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email || fallbackEmail || '',
+    role: profile.role,
+    credits: profile.credits || 0,
+  }
+}
+
+async function ensureProfile({ userId, email, name, role = 'cliente' }) {
+  const payload = {
+    id: userId,
+    email,
+    name,
+    role,
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .upsert(payload, { onConflict: 'id' })
+    .select('id, name, email, role, credits')
+    .single()
+
+  if (error) {
+    throw new ApiError(500, 'Erro ao salvar perfil do usuário.', error)
+  }
+
+  return data
+}
+
+export async function signUp(input) {
+  const { data, error } = await supabaseAuth.auth.signUp({
+    email: input.email,
+    password: input.password,
+    options: {
+      emailRedirectTo: `${env.FRONTEND_URL}/sign-in?confirmed=1`,
+      data: {
+        name: input.username,
+        role: 'cliente',
+      },
+    },
+  })
+
+  if (error) {
+    if (error.message?.toLowerCase().includes('already')) {
+      throw new ApiError(409, 'Este e-mail já está cadastrado.')
+    }
+
+    throw new ApiError(400, error.message || 'Falha ao criar conta.')
+  }
+
+  if (!data.user) {
+    throw new ApiError(500, 'Supabase não retornou o usuário criado.')
+  }
+
+  if (!data.session) {
+    return {
+      success: true,
+      requiresEmailConfirmation: true,
+      email: input.email,
+      message:
+        'Conta criada. Verifique seu e-mail para confirmar o cadastro antes de entrar.',
+    }
+  }
+
+  const profile = await ensureProfile({
+    userId: data.user.id,
+    email: data.user.email,
+    name: input.username,
+    role: 'cliente',
+  })
+
+  return {
+    success: true,
+    requiresEmailConfirmation: false,
+    token: data.session.access_token,
+    user: mapProfileToUser(profile, data.user.email),
+  }
+}
+
+export async function login(input) {
+  const { data, error } = await supabaseAuth.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
+  })
+
+  if (error) {
+    const message = error.message?.toLowerCase() || ''
+
+    if (message.includes('email not confirmed')) {
+      throw new ApiError(403, 'Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.')
+    }
+
+    throw new ApiError(401, 'E-mail ou senha incorretos.')
+  }
+
+  if (!data.user || !data.session) {
+    throw new ApiError(401, 'E-mail ou senha incorretos.')
+  }
+
+  const profile = await ensureProfile({
+    userId: data.user.id,
+    email: data.user.email,
+    name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'Usuário',
+    role: data.user.user_metadata?.role || 'cliente',
+  })
+
+  return {
+    token: data.session.access_token,
+    user: mapProfileToUser(profile, data.user.email),
+  }
+}

@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+dist-ssr/
+build/
+*.local
+.next/
+out/
+
+# Environment (manter .env.example versionado)
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+
+# Vite / tooling
+.vite/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# IDE e assistentes locais
+.cursor/
+.claude/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Misc
+*.swp
+*.swo
+*~

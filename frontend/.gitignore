@@ -1,0 +1,30 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build
+dist
+dist-ssr
+*.local
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor / assistentes locais
+.vscode/*
+!.vscode/extensions.json
+.idea
+.cursor/
+.claude/
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo

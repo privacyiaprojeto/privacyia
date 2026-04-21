@@ -1,0 +1,77 @@
+import type { Notificacao, PreferenciasNotificacao } from '@/features/cliente/notificacoes/types'
+
+export const notificacoesMock: Notificacao[] = [
+  {
+    id: 'n-001',
+    tipo: 'marketing',
+    categoria: 'novo_conteudo',
+    titulo: 'Sofia Lane publicou novo conteúdo',
+    descricao: 'Uma nova foto exclusiva está disponível para você.',
+    lida: false,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    payload: { atrizSlug: 'sofia-lane', atrizId: '1' },
+  },
+  {
+    id: 'n-002',
+    tipo: 'sistema',
+    categoria: 'geracao_concluida',
+    titulo: 'Sua geração de imagem ficou pronta',
+    descricao: 'A imagem gerada com IA já está disponível na sua galeria.',
+    lida: false,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
+    payload: { atrizId: '2' },
+  },
+  {
+    id: 'n-003',
+    tipo: 'sistema',
+    categoria: 'creditos_baixos',
+    titulo: 'Seus créditos estão acabando',
+    descricao: 'Você tem menos de 50 créditos. Recarregue para continuar aproveitando.',
+    lida: false,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+  },
+  {
+    id: 'n-004',
+    tipo: 'marketing',
+    categoria: 'nova_publicacao',
+    titulo: 'Mia Rossi está online agora',
+    descricao: 'Aproveite para mandar uma mensagem e interagir com ela.',
+    lida: true,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+    payload: { atrizSlug: 'mia-rossi', atrizId: '2' },
+  },
+  {
+    id: 'n-005',
+    tipo: 'marketing',
+    categoria: 'novo_conteudo',
+    titulo: 'Luna Soares publicou novo conteúdo',
+    descricao: 'Confira o vídeo exclusivo que ela acabou de lançar.',
+    lida: true,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
+    payload: { atrizSlug: 'luna-soares', atrizId: '3' },
+  },
+  {
+    id: 'n-006',
+    tipo: 'sistema',
+    categoria: 'geracao_concluida',
+    titulo: 'Geração de vídeo concluída',
+    descricao: 'O vídeo gerado pela IA está pronto e salvo na sua galeria.',
+    lida: true,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    payload: { atrizId: '1', mediaId: 'media-x1' },
+  },
+  {
+    id: 'n-007',
+    tipo: 'sistema',
+    categoria: 'aviso_geral',
+    titulo: 'Bem-vindo ao Privacy IA',
+    descricao: 'Explore conteúdo exclusivo e interaja com suas modelos favoritas.',
+    lida: true,
+    criadaEm: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+  },
+]
+
+export const preferenciasNotificacoesMock: PreferenciasNotificacao = {
+  marketing: true,
+  sistema: true,
+}
