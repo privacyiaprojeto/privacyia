@@ -26,11 +26,18 @@ function getAtrizIdentityKeys(atriz: Atriz) {
   const slug = toSlug(atriz.slug)
   const nome = normalizeKey(atriz.nome)
   const nomeSlug = toSlug(atriz.nome)
+  const firstName = nome.split(/\s+/)[0]
 
   if (id) keys.add(`id:${id}`)
   if (slug) keys.add(`slug:${slug}`)
   if (nome) keys.add(`nome:${nome}`)
   if (nomeSlug) keys.add(`slug:${nomeSlug}`)
+
+  // Proteção específica contra a regressão Sofia real x Sofia mock.
+  // Se a Sofia real veio da API, qualquer Sofia do mock é tratada como duplicada.
+  if (slug.includes('sofia') || nome.includes('sofia') || firstName === 'sofia') {
+    keys.add('alias:sofia')
+  }
 
   return keys
 }
@@ -55,6 +62,44 @@ function rotateList<T>(list: T[], startIndex: number) {
   return [...list.slice(offset), ...list.slice(0, offset)]
 }
 
+function normalizeRealAtriz(atriz: Atriz): Atriz {
+  const enriched = enrichAtriz(atriz)
+
+  return {
+    ...enriched,
+    ...atriz,
+    // REGRA DE OURO: registros vindos da API/Supabase preservam o ID real.
+    id: String(atriz.id),
+    slug: atriz.slug || enriched.slug || String(atriz.id),
+    nome: atriz.nome || enriched.nome,
+    avatar: atriz.avatar || enriched.avatar,
+    banner: atriz.banner || enriched.banner || atriz.avatar || enriched.avatar,
+    videoUrl:
+      atriz.videoUrl ||
+      enriched.videoUrl ||
+      atriz.banner ||
+      enriched.banner ||
+      atriz.avatar ||
+      enriched.avatar,
+    thumbnailUrl: atriz.thumbnailUrl ?? enriched.thumbnailUrl ?? null,
+    descricao: atriz.descricao || enriched.descricao || '',
+    idade: atriz.idade || enriched.idade || 0,
+    altura: atriz.altura || enriched.altura || '',
+    fotos: atriz.fotos?.length ? atriz.fotos : enriched.fotos || [],
+    // Atriz real NUNCA pode ser bloqueada como fallback.
+    isFallback: false,
+  }
+}
+
+function normalizeFallbackAtriz(atriz: Atriz): Atriz {
+  const enriched = enrichAtriz(atriz)
+
+  return {
+    ...enriched,
+    isFallback: true,
+  }
+}
+
 function mergeApiAtrizesWithFallback(apiAtrizes: Atriz[]) {
   const merged: Atriz[] = []
   const usedKeys = new Set<string>()
@@ -62,18 +107,19 @@ function mergeApiAtrizesWithFallback(apiAtrizes: Atriz[]) {
   /**
    * Merge inteligente da vitrine:
    * 1. Atrizes reais vindas da API entram primeiro e SEMPRE vencem.
-   * 2. Atrizes do actresses.ts/mock entram apenas como preenchimento visual premium.
-   * 3. Se a Sofia real veio do Supabase, a Sofia fallback é removida por slug/nome.
+   * 2. Atrizes do mock entram apenas como preenchimento visual premium.
+   * 3. Se a Sofia real veio do Supabase, a Sofia mock é removida por slug/nome/alias.
    * 4. O ID real do Supabase é preservado para manter o botão de chat ativo.
+   * 5. isFallback=false é forçado para qualquer atriz real vinda da API.
    */
   for (const atriz of apiAtrizes) {
-    const realAtriz = enrichAtriz(atriz)
+    const realAtriz = normalizeRealAtriz(atriz)
     merged.push(realAtriz)
     addKeys(realAtriz, usedKeys)
   }
 
   for (const mock of mockAtrizes) {
-    const fallbackAtriz = enrichAtriz(mock)
+    const fallbackAtriz = normalizeFallbackAtriz(mock)
 
     if (hasAnyKey(fallbackAtriz, usedKeys)) {
       continue

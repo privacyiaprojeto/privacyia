@@ -6,7 +6,11 @@ export interface AtrizPerfil {
   banner: string
   videoUrl?: string
   thumbnailUrl?: string | null
-  runpodVoiceId?: string | null
+  /**
+   * true apenas para registros de preenchimento visual/mock.
+   * Atrizes vindas da API/Supabase devem manter isFallback=false para habilitar chat.
+   */
+  isFallback?: boolean
 }
 
 export interface Atriz {
@@ -21,5 +25,9 @@ export interface Atriz {
   altura: string
   fotos: string[]
   thumbnailUrl?: string | null
-  runpodVoiceId?: string | null
+  /**
+   * true apenas para registros de preenchimento visual/mock.
+   * Atrizes vindas da API/Supabase devem manter isFallback=false para habilitar chat.
+   */
+  isFallback?: boolean
 }

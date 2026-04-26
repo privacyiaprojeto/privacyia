@@ -11,7 +11,6 @@ type RawAtriz = Partial<Atriz> & {
   height_label?: string | null
   gallery_urls?: string[] | null
   thumbnail_url?: string | null
-  runpod_voice_id?: string | null
 }
 
 function toSlug(value: string) {
@@ -48,7 +47,7 @@ function normalizeAtriz(raw: RawAtriz): Atriz {
     altura: raw.altura ?? raw.height_label ?? '',
     fotos: raw.fotos ?? raw.gallery_urls ?? [],
     thumbnailUrl,
-    runpodVoiceId: raw.runpodVoiceId ?? raw.runpod_voice_id ?? null,
+    isFallback: false,
   }
 }
 

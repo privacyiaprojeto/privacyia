@@ -5,7 +5,7 @@ import { ApiError } from '../utils/apiError.js'
 export async function listActresses(profileId) {
   const { data, error } = await supabaseAdmin
     .from('companions')
-    .select('id, slug, name, avatar_url, banner_url, video_url, thumbnail_url, runpod_voice_id, bio, age, height_label, gallery_urls')
+    .select('id, slug, name, avatar_url, banner_url, video_url, thumbnail_url, bio, age, height_label, gallery_urls')
     .order('sort_order', { ascending: true })
 
   if (error) {
@@ -20,7 +20,6 @@ export async function listActresses(profileId) {
     banner: item.banner_url || item.thumbnail_url || item.avatar_url,
     videoUrl: item.video_url || item.banner_url || item.thumbnail_url || item.avatar_url,
     thumbnailUrl: item.thumbnail_url || null,
-    runpodVoiceId: item.runpod_voice_id || null,
     descricao: item.bio || '',
     idade: item.age || 0,
     altura: item.height_label || '',
