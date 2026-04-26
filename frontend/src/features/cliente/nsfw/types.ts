@@ -1,7 +1,8 @@
 export interface AtrizAssinada {
   id: string
   nome: string
-  avatarUrl: string
+  avatar: string
+  avatarUrl?: string
 }
 
 export type StatusGeracao = 'em_andamento' | 'concluido' | 'erro'

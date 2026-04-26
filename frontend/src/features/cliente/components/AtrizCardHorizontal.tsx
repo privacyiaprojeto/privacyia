@@ -8,9 +8,16 @@ interface AtrizCardHorizontalProps {
 }
 
 export function AtrizCardHorizontal({ atriz, className }: AtrizCardHorizontalProps) {
+  /**
+   * Correção crítica:
+   * Para registros reais vindos do Supabase, navegamos pelo ID do banco.
+   * Isso evita cair no fallback por slug e mantém o botão de chat habilitado.
+   */
+  const routeId = atriz.id || atriz.slug
+
   return (
     <Link
-      to={`/cliente/atriz/${atriz.slug}`}
+      to={`/cliente/atriz/${routeId}`}
       className={clsx(
         'group relative flex h-24 w-full items-end overflow-hidden rounded-2xl',
         className,

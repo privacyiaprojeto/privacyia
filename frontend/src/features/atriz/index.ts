@@ -1,1 +1,1 @@
-export { AtrizDashboard } from '@/features/atriz/pages/AtrizDashboard'
+export { AtrizLayout } from '@/features/atriz/components/AtrizLayout'

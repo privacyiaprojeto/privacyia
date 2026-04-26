@@ -49,7 +49,7 @@ export function ModalSelecionarAtriz({
                 )}
               >
                 <img
-                  src={atriz.avatarUrl}
+                  src={atriz.avatar || atriz.avatarUrl || '/images/avatar-placeholder.png'}
                   alt={atriz.nome}
                   className="h-20 w-20 rounded-xl object-cover"
                 />

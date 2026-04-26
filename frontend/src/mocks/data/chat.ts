@@ -1,10 +1,16 @@
 import type { Conversa, Mensagem } from '@/features/cliente/chat/types'
+import {
+  DEFAULT_CURRENT_MOOD,
+  DEFAULT_RELATIONSHIP_TYPE,
+} from '@/features/cliente/chat/personaOptions'
 import { mockAtrizes } from '@/mocks/data/atrizes'
 
 export const conversas: Conversa[] = [
   {
     id: '1',
     atriz: { id: mockAtrizes[0].id, nome: mockAtrizes[0].nome, avatar: mockAtrizes[0].avatar, online: true },
+    relationshipType: 'casados',
+    currentMood: 'carinhosa',
     ultimaMensagem: 'Oi, tudo bem? 😊',
     ultimaHora: '14:32',
     naoLidas: 2,
@@ -12,6 +18,8 @@ export const conversas: Conversa[] = [
   {
     id: '2',
     atriz: { id: mockAtrizes[1].id, nome: mockAtrizes[1].nome, avatar: mockAtrizes[1].avatar, online: true },
+    relationshipType: 'amigos',
+    currentMood: 'brincalhona',
     ultimaMensagem: 'Obrigada pelo seu apoio!',
     ultimaHora: '11:15',
     naoLidas: 0,
@@ -19,6 +27,8 @@ export const conversas: Conversa[] = [
   {
     id: '3',
     atriz: { id: mockAtrizes[2].id, nome: mockAtrizes[2].nome, avatar: mockAtrizes[2].avatar, online: true },
+    relationshipType: DEFAULT_RELATIONSHIP_TYPE,
+    currentMood: 'provocadora',
     ultimaMensagem: 'Novo conteúdo disponível 🔥',
     ultimaHora: 'Ontem',
     naoLidas: 5,
@@ -26,6 +36,8 @@ export const conversas: Conversa[] = [
   {
     id: '4',
     atriz: { id: mockAtrizes[3].id, nome: mockAtrizes[3].nome, avatar: mockAtrizes[3].avatar, online: true },
+    relationshipType: 'namorados',
+    currentMood: 'romântica',
     ultimaMensagem: 'Obrigada pela mensagem ❤️',
     ultimaHora: 'Seg',
     naoLidas: 0,
@@ -33,6 +45,8 @@ export const conversas: Conversa[] = [
   {
     id: '5',
     atriz: { id: mockAtrizes[4].id, nome: mockAtrizes[4].nome, avatar: mockAtrizes[4].avatar, online: true },
+    relationshipType: 'mestre/submissa',
+    currentMood: 'dominante',
     ultimaMensagem: 'Você viu meu último post?',
     ultimaHora: 'Dom',
     naoLidas: 1,
@@ -40,6 +54,8 @@ export const conversas: Conversa[] = [
   {
     id: '6',
     atriz: { id: mockAtrizes[5].id, nome: mockAtrizes[5].nome, avatar: mockAtrizes[5].avatar, online: true },
+    relationshipType: 'colegas',
+    currentMood: DEFAULT_CURRENT_MOOD,
     ultimaMensagem: 'Até logo! 👋',
     ultimaHora: 'Sáb',
     naoLidas: 0,

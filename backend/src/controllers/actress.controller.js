@@ -2,6 +2,8 @@ import {
   getActressProfile,
   getActressPublicProfile,
   getActressTimeline,
+  listActresses,
+  subscribeToActress,
 } from '../services/actress.service.js'
 
 export async function getActressProfileController(req, res) {
@@ -16,5 +18,15 @@ export async function getActressTimelineController(req, res) {
 
 export async function getActressPublicProfileController(req, res) {
   const data = await getActressPublicProfile(req.auth.profile.id, req.params.slug)
+  return res.status(200).json(data)
+}
+
+export async function subscribeToActressController(req, res) {
+  const data = await subscribeToActress(req.auth.profile.id, req.params.companionId)
+  return res.status(201).json(data)
+}
+
+export async function listActressesController(req, res) {
+  const data = await listActresses(req.auth.profile.id)
   return res.status(200).json(data)
 }

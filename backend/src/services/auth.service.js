@@ -2,6 +2,22 @@ import { supabaseAdmin, supabaseAuth } from '../config/supabase.js'
 import { env } from '../config/env.js'
 import { ApiError } from '../utils/apiError.js'
 
+const VALID_ROLES = new Set(['cliente', 'atriz', 'adm'])
+
+function normalizeRole(role) {
+  return VALID_ROLES.has(role) ? role : null
+}
+
+function resolveRole({ authUser, existingProfileRole, explicitRole }) {
+  return (
+    normalizeRole(explicitRole) ||
+    normalizeRole(authUser?.app_metadata?.role) ||
+    normalizeRole(authUser?.user_metadata?.role) ||
+    normalizeRole(existingProfileRole) ||
+    'cliente'
+  )
+}
+
 function mapProfileToUser(profile, fallbackEmail) {
   return {
     id: profile.id,
@@ -12,12 +28,23 @@ function mapProfileToUser(profile, fallbackEmail) {
   }
 }
 
-export async function ensureProfile({ userId, email, name, role = 'cliente' }) {
+export async function ensureProfile({ userId, email, name, role, authUser = null }) {
+  const { data: existingProfile, error: existingError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, name, email, role, credits')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (existingError) {
+    throw new ApiError(500, 'Erro ao consultar perfil do usuário.', existingError)
+  }
+
+  const finalRole = resolveRole({ authUser, existingProfileRole: existingProfile?.role, explicitRole: role })
   const payload = {
     id: userId,
     email,
     name,
-    role,
+    role: finalRole,
   }
 
   const { data, error } = await supabaseAdmin
@@ -73,6 +100,7 @@ export async function signUp(input) {
     email: data.user.email,
     name: input.username,
     role: 'cliente',
+    authUser: data.user,
   })
 
   return {
@@ -111,7 +139,8 @@ export async function login(input) {
       data.user.user_metadata?.full_name ||
       data.user.email?.split('@')[0] ||
       'Usuário',
-    role: data.user.user_metadata?.role || 'cliente',
+    role: undefined,
+    authUser: data.user,
   })
 
   return {
@@ -139,7 +168,8 @@ export async function getMeFromAccessToken(authUser) {
       authUser.user_metadata?.full_name ||
       authUser.email?.split('@')[0] ||
       'Usuário',
-    role: authUser.user_metadata?.role || 'cliente',
+    role: undefined,
+    authUser,
   })
 
   return {

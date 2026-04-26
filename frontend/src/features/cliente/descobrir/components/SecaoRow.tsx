@@ -1,4 +1,5 @@
-import type { Secao } from '@/mocks/data/secoes'
+import { Link } from 'react-router'
+import type { Secao } from '@/features/cliente/descobrir/types'
 
 interface SecaoRowProps {
   secao: Secao
@@ -14,20 +15,21 @@ export function SecaoRow({ secao }: SecaoRowProps) {
 
       <div className="flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-none">
         {secao.atrizes.map((atriz) => (
-          <div key={atriz.id} className="flex-none w-24 cursor-pointer">
+          <Link key={atriz.id} to={`/cliente/atriz/${atriz.slug}`} className="flex-none w-24 cursor-pointer">
             <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-zinc-900">
               <video
                 src={atriz.videoUrl}
                 muted
                 playsInline
                 preload="metadata"
+                poster={atriz.avatar}
                 className="h-full w-full object-cover"
               />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 pb-1 pt-4">
                 <p className="truncate text-[9px] font-semibold text-white">{atriz.nome}</p>
               </div>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>

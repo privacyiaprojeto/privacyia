@@ -57,8 +57,12 @@ export function AtrizProfilePanel({ atrizId }: Props) {
         <>
           {/* Avatar + gradiente */}
           <div className="shrink-0 bg-gradient-to-b from-violet-900/30 to-zinc-950 px-4 pb-4 pt-6">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-violet-600/40 bg-violet-600/20 shadow-lg shadow-violet-900/20">
-              <User size={32} className="text-violet-400" />
+            <div className="mx-auto flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-2 border-violet-600/40 bg-violet-600/20 shadow-lg shadow-violet-900/20">
+              {perfil.avatar ? (
+                <img src={perfil.avatar} alt={perfil.nome} className="h-full w-full object-cover" />
+              ) : (
+                <User size={32} className="text-violet-400" />
+              )}
             </div>
 
             <div className="mt-3 text-center">

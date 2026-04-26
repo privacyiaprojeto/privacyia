@@ -1,6 +1,10 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
 
+function normalizeRole(role) {
+  return ['cliente', 'atriz', 'adm'].includes(role) ? role : null
+}
+
 export async function authMiddleware(req, _res, next) {
   try {
     const authorization = req.headers.authorization || ''
@@ -31,6 +35,12 @@ export async function authMiddleware(req, _res, next) {
       throw new ApiError(500, 'Erro ao carregar perfil autenticado.', profileError)
     }
 
+    const fallbackRole =
+      normalizeRole(profile?.role) ||
+      normalizeRole(authUser.app_metadata?.role) ||
+      normalizeRole(authUser.user_metadata?.role) ||
+      'cliente'
+
     req.auth = {
       token,
       user: authUser,
@@ -38,7 +48,7 @@ export async function authMiddleware(req, _res, next) {
         id: authUser.id,
         name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Usuário',
         email: authUser.email,
-        role: authUser.user_metadata?.role || 'cliente',
+        role: fallbackRole,
         credits: 0,
       },
     }

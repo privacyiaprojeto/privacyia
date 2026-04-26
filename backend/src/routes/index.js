@@ -8,6 +8,7 @@ import { notificationsRoutes } from './notifications.routes.js'
 import { healthRoutes } from './health.routes.js'
 import { profileRoutes } from './profile.routes.js'
 import { nsfwRoutes } from './nsfw.routes.js'
+import { discoverRoutes } from './discover.routes.js'
 import { authMiddleware } from '../middlewares/auth.middleware.js'
 
 export function registerRoutes(app) {
@@ -22,4 +23,5 @@ export function registerRoutes(app) {
   app.use('/notificacoes', authMiddleware, notificationsRoutes)
   app.use('/cliente', authMiddleware, profileRoutes)
   app.use('/nsfw', authMiddleware, nsfwRoutes)
+  app.use('/descobrir', authMiddleware, discoverRoutes)
 }

@@ -1,6 +1,33 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
 
+
+export async function listActresses(profileId) {
+  const { data, error } = await supabaseAdmin
+    .from('companions')
+    .select('id, slug, name, avatar_url, banner_url, video_url, thumbnail_url, runpod_voice_id, bio, age, height_label, gallery_urls')
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    throw new ApiError(500, 'Erro ao buscar atrizes.', error)
+  }
+
+  return (data || []).map((item) => ({
+    id: item.id,
+    slug: item.slug,
+    nome: item.name,
+    avatar: item.avatar_url || item.thumbnail_url,
+    banner: item.banner_url || item.thumbnail_url || item.avatar_url,
+    videoUrl: item.video_url || item.banner_url || item.thumbnail_url || item.avatar_url,
+    thumbnailUrl: item.thumbnail_url || null,
+    runpodVoiceId: item.runpod_voice_id || null,
+    descricao: item.bio || '',
+    idade: item.age || 0,
+    altura: item.height_label || '',
+    fotos: item.gallery_urls || [],
+  }))
+}
+
 export async function getActressProfile(atrizId) {
   const { data: companion, error } = await supabaseAdmin
     .from('companions')
@@ -222,5 +249,40 @@ export async function getActressPublicProfile(profileId, slug) {
       url: item.result_url,
       criadaEm: item.created_at,
     })),
+  }
+}
+
+
+export async function subscribeToActress(profileId, companionId) {
+  const { data: companion, error: companionError } = await supabaseAdmin
+    .from('companions')
+    .select('id')
+    .eq('id', companionId)
+    .maybeSingle()
+
+  if (companionError) {
+    throw new ApiError(500, 'Erro ao validar criadora.', companionError)
+  }
+
+  if (!companion) {
+    throw new ApiError(404, 'Criadora não encontrada.')
+  }
+
+  const { error } = await supabaseAdmin
+    .from('companion_subscriptions')
+    .upsert({
+      profile_id: profileId,
+      companion_id: companionId,
+      status: 'active',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'profile_id,companion_id' })
+
+  if (error) {
+    throw new ApiError(500, 'Erro ao ativar assinatura.', error)
+  }
+
+  return {
+    success: true,
+    status: 'active',
   }
 }

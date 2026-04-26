@@ -11,7 +11,13 @@ import { GerarImagem, GerarVideo } from '@/features/cliente/nsfw'
 import { Carteira } from '@/features/cliente/carteira'
 import { Perfil } from '@/features/cliente/perfil'
 import { AtrizPerfilPage } from '@/features/cliente/atriz-perfil'
-import { AtrizDashboard } from '@/features/atriz'
+import { AtrizLayout } from '@/features/atriz'
+import { Dashboard } from '@/features/atriz/dashboard'
+import { Financeiro } from '@/features/atriz/financeiro'
+import { Galeria as GaleriaAtriz } from '@/features/atriz/galeria'
+import { Assinantes } from '@/features/atriz/assinantes'
+import { Notificacoes as NotificacoesAtriz } from '@/features/atriz/notificacoes'
+import { Configuracoes } from '@/features/atriz/configuracoes'
 import { AdmDashboard } from '@/features/adm'
 import { useAuthStore } from '@/shared/stores/useAuthStore'
 import type { UserRole } from '@/shared/types/user'
@@ -69,7 +75,14 @@ export function Router() {
         </Route>
 
         <Route element={<RouteGuard allowedRoles={['atriz']} />}>
-          <Route path="/atriz" element={<AtrizDashboard />} />
+          <Route path="/atriz" element={<AtrizLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="financeiro" element={<Financeiro />} />
+            <Route path="galeria" element={<GaleriaAtriz />} />
+            <Route path="assinantes" element={<Assinantes />} />
+            <Route path="notificacoes" element={<NotificacoesAtriz />} />
+            <Route path="configuracoes" element={<Configuracoes />} />
+          </Route>
         </Route>
 
         <Route element={<RouteGuard allowedRoles={['adm']} />}>
