@@ -11,7 +11,7 @@ const runpod = axios.create({
 })
 
 function getAudioEndpointId() {
-  return env.RUNPOD_FISH_SPEECH_ENDPOINT_ID || env.RUNPOD_AUDIO_ENDPOINT_ID
+  return env.RUNPOD_QWEN_TTS_ENDPOINT_ID
 }
 
 function sleep(ms) {
@@ -141,25 +141,6 @@ function cleanBase64(value) {
   return raw.replace(/^base64,/, '').replace(/\s/g, '')
 }
 
-function isValidBase64(value) {
-  const cleaned = cleanBase64(value)
-
-  if (!cleaned || cleaned.length % 4 !== 0) {
-    return false
-  }
-
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(cleaned)) {
-    return false
-  }
-
-  try {
-    const decoded = Buffer.from(cleaned, 'base64')
-    return decoded.length > 0 && decoded.toString('base64').replace(/=+$/, '') === cleaned.replace(/=+$/, '')
-  } catch {
-    return false
-  }
-}
-
 async function downloadAudioBuffer(url) {
   const response = await axios.get(url, {
     responseType: 'arraybuffer',
@@ -188,7 +169,7 @@ async function normalizeAudioOutput(output) {
   const candidate = extractAudioCandidate(output)
 
   if (!candidate) {
-    console.error('[RunPod Fish Speech] output sem áudio reconhecível:', JSON.stringify(redactPayloadForLog(output), null, 2))
+    console.error('[RunPod Qwen3-TTS] output sem áudio reconhecível:', JSON.stringify(redactPayloadForLog(output), null, 2))
     throw new Error('RunPod não retornou áudio em base64 ou URL.')
   }
 
@@ -204,7 +185,7 @@ async function normalizeAudioOutput(output) {
   return {
     buffer: Buffer.from(cleaned, 'base64'),
     mimeType,
-    extension: getMimeExtension(mimeType),
+    extension: output?.extension || getMimeExtension(mimeType),
   }
 }
 
@@ -212,12 +193,14 @@ async function submitJob(payload) {
   const audioEndpointId = getAudioEndpointId()
 
   if (!env.RUNPOD_API_KEY || !audioEndpointId) {
-    throw new Error('RunPod de áudio não configurado.')
+    throw new Error('RunPod de áudio Qwen3-TTS não configurado.')
   }
 
   try {
-    console.log(`[RunPod Fish Speech] usando endpoint=${audioEndpointId}`)
-    console.log('[RunPod Fish Speech] payload reference-array | reference_audio[0] chars=' + String((payload.reference_audio || [])[0] || '').length + ' | refs=' + (Array.isArray(payload.reference_audio) ? payload.reference_audio.length : 0))
+    console.log(`[RunPod Qwen3-TTS] usando endpoint=${audioEndpointId}`)
+    console.log(
+      `[RunPod Qwen3-TTS] payload | text=${String(payload.text || '').length} chars | profile=${payload.voice_profile_key || 'n/a'} | refUrl=${payload.url_audio_referencia ? 'ok' : 'missing'}`,
+    )
 
     const response = await runpod.post(`/${audioEndpointId}/run`, {
       input: payload,
@@ -227,15 +210,15 @@ async function submitJob(payload) {
   } catch (error) {
     const runpodError = buildRunPodError(error)
 
-    console.error('[RunPod Fish Speech] falha ao criar job de TTS.')
-    console.error('[RunPod Fish Speech] payload enviado:', JSON.stringify(redactPayloadForLog(payload), null, 2))
-    console.error('[RunPod Fish Speech] resposta do RunPod:', JSON.stringify(runpodError, null, 2))
+    console.error('[RunPod Qwen3-TTS] falha ao criar job de TTS.')
+    console.error('[RunPod Qwen3-TTS] payload enviado:', JSON.stringify(redactPayloadForLog(payload), null, 2))
+    console.error('[RunPod Qwen3-TTS] resposta do RunPod:', JSON.stringify(runpodError, null, 2))
 
     throw new Error(
       runpodError?.data?.error ||
         runpodError?.data?.message ||
         runpodError?.message ||
-        'Erro ao criar job de áudio no RunPod.',
+        'Erro ao criar job de áudio Qwen3-TTS no RunPod.',
     )
   }
 }
@@ -244,7 +227,7 @@ async function getJobStatus(jobId) {
   const audioEndpointId = getAudioEndpointId()
 
   if (!env.RUNPOD_API_KEY || !audioEndpointId) {
-    throw new Error('RunPod de áudio não configurado.')
+    throw new Error('RunPod de áudio Qwen3-TTS não configurado.')
   }
 
   const response = await runpod.get(`/${audioEndpointId}/status/${jobId}`)
@@ -254,7 +237,7 @@ async function getJobStatus(jobId) {
 async function waitForJobCompletion(jobId) {
   const startedAt = Date.now()
   const timeoutMs = Math.max(Number(env.RUNPOD_AUDIO_TIMEOUT_MS || 0), 600000)
-  const pollIntervalMs = Math.max(Number(env.RUNPOD_AUDIO_POLL_INTERVAL_MS || 0), 3000)
+  const pollIntervalMs = Math.max(Number(env.RUNPOD_AUDIO_POLL_INTERVAL_MS || 0), 2500)
   let lastStatus = ''
 
   while (Date.now() - startedAt < timeoutMs) {
@@ -263,7 +246,7 @@ async function waitForJobCompletion(jobId) {
 
     if (status && status !== lastStatus) {
       const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000)
-      console.log(`[RunPod Fish Speech] job=${jobId} status=${status} elapsed=${elapsedSeconds}s`)
+      console.log(`[RunPod Qwen3-TTS] job=${jobId} status=${status} elapsed=${elapsedSeconds}s`)
       lastStatus = status
     }
 
@@ -272,7 +255,7 @@ async function waitForJobCompletion(jobId) {
     }
 
     if (['FAILED', 'CANCELLED', 'CANCELED', 'TIMED_OUT'].includes(status)) {
-      console.error('[RunPod Fish Speech] job finalizado com erro:', JSON.stringify(statusPayload, null, 2))
+      console.error('[RunPod Qwen3-TTS] job finalizado com erro:', JSON.stringify(statusPayload, null, 2))
 
       throw new Error(
         statusPayload?.error ||
@@ -285,59 +268,73 @@ async function waitForJobCompletion(jobId) {
     await sleep(pollIntervalMs)
   }
 
-  throw new Error(`Tempo limite excedido aguardando geração de áudio no RunPod após ${Math.round(timeoutMs / 1000)}s.`)
+  throw new Error(`Tempo limite excedido aguardando geração de áudio Qwen3-TTS no RunPod após ${Math.round(timeoutMs / 1000)}s.`)
 }
 
-function buildFishSpeechPayload({ text, voiceProfile, referenceAudio }) {
+function normalizeLanguage(value) {
+  const raw = String(value || env.TTS_DEFAULT_LANGUAGE || 'pt').trim().toLowerCase()
+
+  const map = {
+    pt: 'Portuguese',
+    'pt-br': 'Portuguese',
+    portuguese: 'Portuguese',
+    português: 'Portuguese',
+    en: 'English',
+    'en-us': 'English',
+    english: 'English',
+    es: 'Spanish',
+    spanish: 'Spanish',
+    it: 'Italian',
+    fr: 'French',
+    de: 'German',
+    ja: 'Japanese',
+    ko: 'Korean',
+    ru: 'Russian',
+    zh: 'Chinese',
+    auto: 'Auto',
+  }
+
+  return map[raw] || value || 'Portuguese'
+}
+function getMaxNewTokensForText(text) {
+  const length = String(text || '').length
+
+  if (length <= 80) return 384
+  if (length <= 180) return 512
+  return 768
+}
+function buildQwenTtsPayload({ text, voiceProfile, referenceAudio }) {
   const outputFormat = env.TTS_OUTPUT_FORMAT || 'mp3'
-  const referenceAudioBase64 = cleanBase64(referenceAudio.base64)
-  const referenceText = String(voiceProfile.referenceText || '').trim()
+  const referenceUrl = String(referenceAudio?.url || voiceProfile.referenceAudioUrl || '').trim()
+  const referenceText = String(referenceAudio?.referenceText || voiceProfile.referenceText || '').trim()
 
-  if (!isValidBase64(referenceAudioBase64)) {
-    throw new Error('Áudio de referência inválido: Base64 corrompido antes de enviar ao RunPod.')
+  if (!referenceUrl) {
+    throw new Error('Perfil de voz sem referenceAudioUrl. Não é possível gerar áudio Qwen3-TTS.')
   }
 
-  if (!referenceText) {
-    console.warn(
-      '[RunPod Fish Speech] voiceProfile.referenceText está vazio. ' +
-        'A clonagem pode ignorar parte do tom/timbre. Cadastre o texto exato falado no áudio de referência.',
-    )
-  }
-
-  /**
-   * Payload Fish Speech / RunPod — formato correto do handler.py.
-   *
-   * Auditoria do worker mguinhos/runpod-worker-fish-speech confirmou que o handler
-   * NÃO usa `audio_b64` como referência principal. Ele espera:
-   *
-   *   reference_audio: [base64_1, base64_2, ...]
-   *   reference_text:  [texto_1, texto_2, ...]
-   *
-   * Se `reference_audio` for enviado como string, o Python itera caractere por caractere
-   * e pode quebrar com erro de Base64. Por isso os dois campos vão obrigatoriamente
-   * como arrays paralelos.
-   *
-   * Mantemos o payload enxuto para não reintroduzir o bug causado por aliases extras.
-   */
   return {
     text,
-    format: outputFormat,
+    url_audio_referencia: referenceUrl,
+    reference_text: referenceText,
+    language: normalizeLanguage(voiceProfile.language),
     output_format: outputFormat,
 
-    // Parâmetros compatíveis com o template Fish Speech do RunPod.
-    temperature: 0.8,
-    top_p: 0.8,
-    repetition_penalty: 1.1,
-    max_new_tokens: 1024,
-    chunk_length: 300,
-    seed: null,
-    use_memory_cache: 'off',
+    // Metadados úteis para log no worker.
+    voice_profile_id: voiceProfile.id,
+    voice_profile_key: voiceProfile.profileKey,
+    companion_id: voiceProfile.companionId,
 
-    // Campos corretos para voice cloning no handler.py.
-    reference_audio: [referenceAudioBase64],
-    reference_text: [referenceText],
+    // Se referenceText estiver vazio, o worker usa x_vector_only_mode.
+    // Funciona, mas o ideal é cadastrar transcript do áudio de referência no Supabase.
+    x_vector_only_mode: !referenceText,
+
+    // Parâmetros conservadores para chat: boa estabilidade e latência aceitável.
+    temperature: 0.7,
+    top_p: 0.8,
+    max_new_tokens: getMaxNewTokensForText(text),
   }
 }
+
 export async function generateSpeechWithRunPod({ text, voiceProfile, referenceAudio }) {
   const cleanText = String(text || '').trim()
 
@@ -345,7 +342,7 @@ export async function generateSpeechWithRunPod({ text, voiceProfile, referenceAu
     throw new Error('Texto vazio para geração TTS.')
   }
 
-  const payload = buildFishSpeechPayload({
+  const payload = buildQwenTtsPayload({
     text: cleanText,
     voiceProfile,
     referenceAudio,
@@ -360,11 +357,11 @@ export async function generateSpeechWithRunPod({ text, voiceProfile, referenceAu
   const jobId = job?.id || job?.jobId
 
   if (!jobId) {
-    console.error('[RunPod Fish Speech] resposta sem ID de job:', JSON.stringify(job, null, 2))
+    console.error('[RunPod Qwen3-TTS] resposta sem ID de job:', JSON.stringify(job, null, 2))
     throw new Error('RunPod não retornou ID do job de áudio.')
   }
 
-  console.log(`[RunPod Fish Speech] job=${jobId} enviado | perfil=${voiceProfile.profileKey}`)
+  console.log(`[RunPod Qwen3-TTS] job=${jobId} enviado | perfil=${voiceProfile.profileKey}`)
 
   const completedJob = await waitForJobCompletion(jobId)
   return normalizeAudioOutput(completedJob.output)

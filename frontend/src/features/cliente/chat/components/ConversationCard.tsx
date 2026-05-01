@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { User } from 'lucide-react'
 import clsx from 'clsx'
+import { formatChatClock } from '@/features/cliente/chat/api/chatFormatters'
 import type { Conversa } from '@/features/cliente/chat/types'
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export function ConversationCard({ conversa, isActive }: Props) {
+  const displayTime = formatChatClock(conversa.ultimaHora)
+
   return (
     <Link
       to={`/cliente/chat/${conversa.id}`}
@@ -35,7 +38,7 @@ export function ConversationCard({ conversa, isActive }: Props) {
           <span className="truncate text-sm font-semibold text-zinc-100">
             {conversa.atriz.nome}
           </span>
-          <span className="shrink-0 text-[11px] text-zinc-500">{conversa.ultimaHora}</span>
+          <span className="shrink-0 text-[11px] text-zinc-500">{displayTime}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className={clsx('truncate text-xs', conversa.naoLidas > 0 ? 'text-zinc-300' : 'text-zinc-500')}>

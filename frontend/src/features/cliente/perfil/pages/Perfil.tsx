@@ -170,6 +170,7 @@ export function Perfil() {
             </a>
           </div>
 
+          {/* Lógica solicitada por Lorenzo: único ponto de logout do cliente. */}
           <button
             onClick={handleLogout}
             className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10"

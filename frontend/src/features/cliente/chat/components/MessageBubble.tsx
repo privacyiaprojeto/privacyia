@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { Loader2, Play } from 'lucide-react'
 import { generateMessageAudio } from '@/features/cliente/chat/api/generateMessageAudio'
+import { formatChatClock } from '@/features/cliente/chat/api/chatFormatters'
 import type { Mensagem } from '@/features/cliente/chat/types'
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 
 export function MessageBubble({ mensagem }: Props) {
   const isCliente = mensagem.de === 'cliente'
+  const displayTime = formatChatClock(mensagem.criadaEm)
   const [audioUrl, setAudioUrl] = useState<string | null>(mensagem.audioUrl ?? null)
   const [audioLoading, setAudioLoading] = useState(false)
   const audioRequestInFlightRef = useRef(false)
@@ -72,7 +74,7 @@ export function MessageBubble({ mensagem }: Props) {
               isCliente ? 'text-violet-300' : 'text-zinc-500'
             )}
           >
-            {mensagem.criadaEm}
+            {displayTime}
           </span>
         ) : (
           <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-zinc-500">
@@ -91,7 +93,7 @@ export function MessageBubble({ mensagem }: Props) {
               )}
             </button>
 
-            <span>{mensagem.criadaEm}</span>
+            <span>{displayTime}</span>
           </div>
         )}
       </div>

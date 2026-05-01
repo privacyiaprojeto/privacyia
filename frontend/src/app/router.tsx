@@ -1,6 +1,6 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
+import { BrowserRouter, Navigate, Outlet, Routes, Route, useLocation } from 'react-router'
 import { Home } from '@/features/landing'
-import { SignIn, ForgotPassword, ResetPassword, SignUp } from '@/features/auth'
+import { SignIn, ForgotPassword, SignUp } from '@/features/auth'
 import { ClienteDashboard } from '@/features/cliente'
 import { Feed } from '@/features/cliente/feed'
 import { Descobrir } from '@/features/cliente/descobrir'
@@ -22,11 +22,11 @@ import { AdmDashboard } from '@/features/adm'
 import { useAuthStore } from '@/shared/stores/useAuthStore'
 import type { UserRole } from '@/shared/types/user'
 
-interface GuardProps {
+interface RouteGuardProps {
   allowedRoles?: UserRole[]
 }
 
-function RouteGuard({ allowedRoles }: GuardProps) {
+function RouteGuard({ allowedRoles }: RouteGuardProps) {
   const location = useLocation()
   const token = useAuthStore((s) => s.token)
   const user = useAuthStore((s) => s.user)
@@ -56,9 +56,9 @@ export function Router() {
         <Route path="/" element={<Home />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/sign-up" element={<SignUp />} />
 
+        {/* Cliente */}
         <Route element={<RouteGuard allowedRoles={['cliente']} />}>
           <Route path="/cliente" element={<ClienteDashboard />} />
           <Route path="/cliente/feed" element={<Feed />} />
@@ -74,6 +74,7 @@ export function Router() {
           <Route path="/cliente/atriz/:slug" element={<AtrizPerfilPage />} />
         </Route>
 
+        {/* Atriz */}
         <Route element={<RouteGuard allowedRoles={['atriz']} />}>
           <Route path="/atriz" element={<AtrizLayout />}>
             <Route index element={<Dashboard />} />
@@ -85,7 +86,9 @@ export function Router() {
           </Route>
         </Route>
 
+        {/* Admin */}
         <Route element={<RouteGuard allowedRoles={['adm']} />}>
+          {/* Lógica solicitada por Lorenzo: manter proteção de rota sem importar telas ADM inexistentes no frontend limpo. */}
           <Route path="/adm" element={<AdmDashboard />} />
         </Route>
       </Routes>

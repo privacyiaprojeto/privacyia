@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../config/supabase.js'
 import { env } from '../config/env.js'
 import { ApiError } from '../utils/apiError.js'
 import { uploadAudioBuffer } from './storage.service.js'
-import { getReferenceAudioBase64, selectVoiceProfile } from './voiceProfile.service.js'
+import { selectVoiceProfile } from './voiceProfile.service.js'
 import { generateSpeechWithRunPod } from './providers/runpod.provider.js'
 import { normalizeTextForAudioLimit, prepareTextForTts } from './ttsText.service.js'
 
@@ -181,13 +181,14 @@ export async function generateMessageAudio({ profileId, conversationId, messageI
       `[TTS Gateway] texto normalizado | original=${String(freshMessage.content || '').length} chars | tts=${cleanText.length} chars | perfil=${voiceProfile.profileKey}`,
     )
 
-    const referenceAudio = await getReferenceAudioBase64(voiceProfile.referenceAudioUrl)
-
     const generatedAudio = await generateSpeechWithRunPod({
-      text: cleanText,
-      voiceProfile,
-      referenceAudio,
-    })
+  text: cleanText,
+  voiceProfile,
+  referenceAudio: {
+    url: voiceProfile.referenceAudioUrl,
+    referenceText: voiceProfile.referenceText,
+  },
+})
 
     const extension = generatedAudio.extension || 'mp3'
     const audioKey = `audio/messages/${message.id}-${voiceProfile.profileKey}-${Date.now()}.${extension}`
@@ -200,7 +201,7 @@ export async function generateMessageAudio({ profileId, conversationId, messageI
     await updateMessageAudioState(message.id, {
       audio_url: audioUrl,
       audio_status: 'completed',
-      audio_provider: voiceProfile.provider || 'runpod_fish_speech',
+      audio_provider: 'runpod_qwen3_tts',
       audio_voice_profile_id: voiceProfile.id,
       audio_error: null,
       audio_generated_at: new Date().toISOString(),

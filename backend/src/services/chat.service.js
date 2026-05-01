@@ -8,6 +8,19 @@ import { generateMessageAudio as generateTtsMessageAudio } from './tts.service.j
 const DEFAULT_RELATIONSHIP_TYPE = 'desconhecidos'
 const DEFAULT_CURRENT_MOOD = 'natural'
 const MEMORY_SIMILARITY_THRESHOLD = 0.78
+const CHAT_RECENT_MESSAGES_LIMIT = Number.parseInt(process.env.CHAT_RECENT_MESSAGES_LIMIT || '8', 10)
+const CHAT_MEMORY_RECALL_LIMIT = Number.parseInt(process.env.CHAT_MEMORY_RECALL_LIMIT || '4', 10)
+const CHAT_TIMING_LOGS_ENABLED = process.env.CHAT_TIMING_LOGS_ENABLED !== 'false'
+
+function elapsedMs(startedAt) {
+  return Date.now() - startedAt
+}
+
+function logChatTiming(message) {
+  if (CHAT_TIMING_LOGS_ENABLED) {
+    console.log(message)
+  }
+}
 
 function sanitizePersonaValue(value, fallback) {
   const clean = String(value || '').trim()
@@ -163,7 +176,7 @@ async function getConversationById(profileId, conversationId) {
 async function getCompanionById(companionId) {
   const { data, error } = await supabaseAdmin
     .from('companions')
-    .select('id, name, system_prompt, avatar_url, bio, is_active')
+    .select('id, name, system_prompt, avatar_url, bio, age, height_label, is_active')
     .eq('id', companionId)
     .maybeSingle()
 
@@ -225,6 +238,37 @@ async function insertAssistantMessage(conversationId, reply) {
   return data
 }
 
+function buildCompanionIntroMessage(companion) {
+  const name = String(companion?.name || 'Sofia').trim() || 'Sofia'
+  const age = Number(companion?.age || 0)
+  const ageText = age > 0 ? ` Tenho ${age} anos.` : ''
+
+  // Mensagem de abertura deve soar como fala humana, não como descrição comercial do perfil.
+  // Por isso não copiamos a bio crua, que muitas vezes vem em tom institucional.
+  return `Oi... me chamo ${name}.${ageText} Gosto de conversar com calma, prestar atenção no seu jeito e deixar o papo leve. Me conta um pouquinho de você?`
+}
+async function createIntroMessage(conversation) {
+  const companion = await getCompanionById(conversation.companion_id)
+  const intro = buildCompanionIntroMessage(companion)
+  const savedIntroMessage = await insertAssistantMessage(conversation.id, intro)
+
+  await updateConversationPreview(conversation.id, intro)
+
+  return savedIntroMessage
+}
+
+async function deleteConversationMemories({ profileId, companionId }) {
+  const { error } = await supabaseAdmin
+    .from('conversation_memories')
+    .delete()
+    .eq('profile_id', profileId)
+    .eq('companion_id', companionId)
+
+  if (error) {
+    throw new ApiError(500, 'Erro ao apagar memórias da conversa.', error)
+  }
+}
+
 async function createReplyNotification({ profileId, companionId, companionName, reply }) {
   const { error } = await supabaseAdmin
     .from('notifications')
@@ -265,13 +309,13 @@ function buildMemoryText({
   ].join('\n')
 }
 
-async function recallSafeMemories(profileId, companionId, queryText) {
+async function recallSafeMemories(profileId, companionId, queryText, limit = CHAT_MEMORY_RECALL_LIMIT) {
   try {
     return await recallMemories(
       profileId,
       companionId,
       queryText,
-      8,
+      limit,
       MEMORY_SIMILARITY_THRESHOLD,
     )
   } catch (error) {
@@ -301,16 +345,22 @@ async function generateAndPersistAutoReply({
   conversation,
   userMessage,
 }) {
-  const [companion, recentMessages] = await Promise.all([
+  const startedAt = Date.now()
+  const preloadStartedAt = Date.now()
+
+  const [companion, recentMessages, recalledMemories] = await Promise.all([
     getCompanionById(conversation.companion_id),
-    getRecentMessages(conversation.id, 12),
+    getRecentMessages(conversation.id, CHAT_RECENT_MESSAGES_LIMIT),
+    recallSafeMemories(
+      profileId,
+      conversation.companion_id,
+      userMessage,
+      CHAT_MEMORY_RECALL_LIMIT,
+    ),
   ])
 
-  const recalledMemories = await recallSafeMemories(
-    profileId,
-    conversation.companion_id,
-    userMessage,
-  )
+  const preloadMs = elapsedMs(preloadStartedAt)
+  const iaStartedAt = Date.now()
 
   const reply = await maybeGenerateAutoReply({
     companion,
@@ -322,29 +372,53 @@ async function generateAndPersistAutoReply({
     recalledMemories,
   })
 
+  const iaMs = elapsedMs(iaStartedAt)
+
   if (!reply) {
+    logChatTiming(
+      `[Chat timing] resposta vazia | conversa=${conversation.id} | preload=${preloadMs}ms | ia=${iaMs}ms | total=${elapsedMs(startedAt)}ms`,
+    )
     return null
   }
 
+  const persistStartedAt = Date.now()
   const savedAssistantMessage = await insertAssistantMessage(conversation.id, reply)
 
   await updateConversationPreview(conversation.id, reply)
+  const persistMs = elapsedMs(persistStartedAt)
 
-  await createReplyNotification({
-    profileId,
-    companionId: conversation.companion_id,
-    companionName: companion.name,
-    reply,
+  // Importante:
+  // Notificação e memória vetorial não precisam travar a resposta do chat.
+  // Elas rodam em segundo plano para não atrasar a experiência.
+  Promise.allSettled([
+    createReplyNotification({
+      profileId,
+      companionId: conversation.companion_id,
+      companionName: companion.name,
+      reply,
+    }),
+    saveSafeMemory({
+      profileId,
+      companionId: conversation.companion_id,
+      companionName: companion.name,
+      conversation,
+      userMessage,
+      assistantReply: reply,
+    }),
+  ]).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error(
+          '⚠️ Falha em efeito colateral pós-resposta:',
+          result.reason?.message || result.reason,
+        )
+      }
+    }
   })
 
-  await saveSafeMemory({
-    profileId,
-    companionId: conversation.companion_id,
-    companionName: companion.name,
-    conversation,
-    userMessage,
-    assistantReply: reply,
-  })
+  logChatTiming(
+    `[Chat timing] resposta IA | conversa=${conversation.id} | preload=${preloadMs}ms | ia=${iaMs}ms | persist=${persistMs}ms | total=${elapsedMs(startedAt)}ms | chars=${reply.length} | recent=${recentMessages.length} | memories=${recalledMemories.length}`,
+  )
 
   return mapMessage(savedAssistantMessage)
 }
@@ -491,7 +565,7 @@ export async function updateConversationPersona({
 }
 
 export async function listMessages(profileId, conversationId) {
-  await getOwnedConversation(profileId, conversationId)
+  const conversation = await getOwnedConversation(profileId, conversationId)
 
   const { data, error } = await supabaseAdmin
     .from('messages')
@@ -503,12 +577,22 @@ export async function listMessages(profileId, conversationId) {
     throw new ApiError(500, 'Erro ao buscar mensagens.', error)
   }
 
+  if (!data?.length) {
+    const introMessage = await createIntroMessage(conversation)
+    return [mapMessage(introMessage)]
+  }
+
   return (data || []).map(mapMessage)
 }
 
 export async function sendMessage({ profileId, conversationId, conteudo }) {
-  const conversation = await getOwnedConversation(profileId, conversationId)
+  const startedAt = Date.now()
 
+  const ownedStartedAt = Date.now()
+  const conversation = await getOwnedConversation(profileId, conversationId)
+  const ownedMs = elapsedMs(ownedStartedAt)
+
+  const insertStartedAt = Date.now()
   const { data, error } = await supabaseAdmin
     .from('messages')
     .insert({
@@ -522,16 +606,27 @@ export async function sendMessage({ profileId, conversationId, conteudo }) {
   if (error) {
     throw new ApiError(500, 'Erro ao salvar mensagem.', error)
   }
+  const insertMs = elapsedMs(insertStartedAt)
 
+  const previewStartedAt = Date.now()
   await updateConversationPreview(conversationId, conteudo)
+  const previewMs = elapsedMs(previewStartedAt)
 
-  generateAndPersistAutoReply({
-    profileId,
-    conversation,
-    userMessage: conteudo,
-  }).catch((error) => {
-    console.error('⚠️ Falha ao gerar pipeline automático da IA:', error.message)
-  })
+  const replyStartedAt = Date.now()
+  try {
+    await generateAndPersistAutoReply({
+      profileId,
+      conversation,
+      userMessage: conteudo,
+    })
+  } catch (error) {
+    console.error('⚠️ Falha ao gerar resposta automática da IA:', error.message)
+  }
+  const replyMs = elapsedMs(replyStartedAt)
+
+  logChatTiming(
+    `[Chat timing] mensagem processada | conversa=${conversationId} | owned=${ownedMs}ms | insert=${insertMs}ms | preview=${previewMs}ms | replyPipeline=${replyMs}ms | total=${elapsedMs(startedAt)}ms`,
+  )
 
   return mapMessage(data)
 }
@@ -543,26 +638,38 @@ export async function generateMessageAudio({ profileId, conversationId, messageI
 
 
 export async function resetConversationMessages({ profileId, conversationId }) {
+  const startedAt = Date.now()
   const conversation = await getOwnedConversation(profileId, conversationId)
 
-  const { error } = await supabaseAdmin
+  const { error: messagesError } = await supabaseAdmin
     .from('messages')
     .delete()
     .eq('conversation_id', conversation.id)
 
-  if (error) {
-    throw new ApiError(500, 'Erro ao resetar mensagens da conversa.', error)
+  if (messagesError) {
+    throw new ApiError(500, 'Erro ao resetar mensagens da conversa.', messagesError)
   }
 
-  await updateConversationPreview(conversation.id, 'Conversa reiniciada')
+  await deleteConversationMemories({
+    profileId,
+    companionId: conversation.companion_id,
+  })
+
+  const introMessage = await createIntroMessage(conversation)
+
+  logChatTiming(
+    `[Chat timing] conversa resetada | conversa=${conversation.id} | companion=${conversation.companion_id} | total=${elapsedMs(startedAt)}ms`,
+  )
 
   return {
     id: conversation.id,
     reset: true,
+    mensagem: mapMessage(introMessage),
   }
 }
 
 export async function streamMessageReply({ profileId, conversationId, conteudo, onToken }) {
+  const startedAt = Date.now()
   const conversation = await getOwnedConversation(profileId, conversationId)
 
   const { data: userMessage, error } = await supabaseAdmin
@@ -581,17 +688,20 @@ export async function streamMessageReply({ profileId, conversationId, conteudo, 
 
   await updateConversationPreview(conversationId, conteudo)
 
-  const [companion, recentMessages] = await Promise.all([
+  const preloadStartedAt = Date.now()
+  const [companion, recentMessages, recalledMemories] = await Promise.all([
     getCompanionById(conversation.companion_id),
-    getRecentMessages(conversationId, 12),
+    getRecentMessages(conversationId, CHAT_RECENT_MESSAGES_LIMIT),
+    recallSafeMemories(
+      profileId,
+      conversation.companion_id,
+      conteudo,
+      CHAT_MEMORY_RECALL_LIMIT,
+    ),
   ])
+  const preloadMs = elapsedMs(preloadStartedAt)
 
-  const recalledMemories = await recallSafeMemories(
-    profileId,
-    conversation.companion_id,
-    conteudo,
-  )
-
+  const streamStartedAt = Date.now()
   const reply = await streamAutoReply({
     companion,
     conversationPersona: {
@@ -602,30 +712,47 @@ export async function streamMessageReply({ profileId, conversationId, conteudo, 
     recalledMemories,
     onToken,
   })
+  const streamMs = elapsedMs(streamStartedAt)
 
   if (!reply) {
     throw new ApiError(502, 'A IA não retornou resposta.')
   }
 
+  const persistStartedAt = Date.now()
   const savedAssistantMessage = await insertAssistantMessage(conversationId, reply)
 
   await updateConversationPreview(conversationId, reply)
+  const persistMs = elapsedMs(persistStartedAt)
 
-  await createReplyNotification({
-    profileId,
-    companionId: conversation.companion_id,
-    companionName: companion.name,
-    reply,
+  Promise.allSettled([
+    createReplyNotification({
+      profileId,
+      companionId: conversation.companion_id,
+      companionName: companion.name,
+      reply,
+    }),
+    saveSafeMemory({
+      profileId,
+      companionId: conversation.companion_id,
+      companionName: companion.name,
+      conversation,
+      userMessage: conteudo,
+      assistantReply: reply,
+    }),
+  ]).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error(
+          '⚠️ Falha em efeito colateral pós-stream:',
+          result.reason?.message || result.reason,
+        )
+      }
+    }
   })
 
-  await saveSafeMemory({
-    profileId,
-    companionId: conversation.companion_id,
-    companionName: companion.name,
-    conversation,
-    userMessage: conteudo,
-    assistantReply: reply,
-  })
+  logChatTiming(
+    `[Chat timing] stream processado | conversa=${conversationId} | preload=${preloadMs}ms | stream=${streamMs}ms | persist=${persistMs}ms | total=${elapsedMs(startedAt)}ms | chars=${reply.length} | recent=${recentMessages.length} | memories=${recalledMemories.length}`,
+  )
 
   return {
     userMessage: mapMessage(userMessage),

@@ -32,11 +32,7 @@ function normalizeAtriz(raw: RawAtriz): Atriz {
 
   return {
     id,
-    /**
-     * Importante:
-     * O slug visual pode existir, mas os cards devem navegar usando o ID real do Supabase.
-     * Assim a página de perfil recebe um UUID válido e o botão de chat fica habilitado.
-     */
+    // Lógica solicitada por Lorenzo: preserva o ID real; slug segue apenas como dado visual/fallback.
     slug: raw.slug || toSlug(nome) || id,
     nome,
     avatar,

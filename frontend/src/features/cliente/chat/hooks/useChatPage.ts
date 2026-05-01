@@ -3,12 +3,10 @@ import { useParams, useNavigate } from 'react-router'
 import { useConversas } from '@/features/cliente/chat/hooks/useConversas'
 import { useMensagens } from '@/features/cliente/chat/hooks/useMensagens'
 import { useEnviarMensagem } from '@/features/cliente/chat/hooks/useEnviarMensagem'
-import { useUpdateConversationPersona } from '@/features/cliente/chat/hooks/useUpdateConversationPersona'
+import { useResetarChat } from '@/features/cliente/chat/hooks/useResetarChat'
 
 export function useChatPage() {
   const [menuAberto, setMenuAberto] = useState(false)
-  const [draftRelationshipType, setDraftRelationshipType] = useState<string | null>(null)
-  const [draftCurrentMood, setDraftCurrentMood] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const { id } = useParams<{ id: string }>()
@@ -17,7 +15,7 @@ export function useChatPage() {
   const { data: conversas, isPending: loadingConversas } = useConversas()
   const { data: mensagens, isPending: loadingMensagens } = useMensagens(id ?? '')
   const { mutate: enviar, isPending: enviando } = useEnviarMensagem(id ?? '')
-  const { mutate: salvarPersona, isPending: salvandoPersona } = useUpdateConversationPersona()
+  const { mutate: resetarChat, isPending: resetandoChat } = useResetarChat(id ?? '')
 
   const conversa = conversas?.find((c) => c.id === id)
 
@@ -41,33 +39,11 @@ export function useChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
 
-  useEffect(() => {
-    if (conversa) {
-      setDraftRelationshipType(conversa.relationshipType)
-      setDraftCurrentMood(conversa.currentMood)
-    } else {
-      setDraftRelationshipType(null)
-      setDraftCurrentMood(null)
-    }
-  }, [conversa?.id, conversa?.relationshipType, conversa?.currentMood, conversa])
+  function handleResetarChat() {
+    if (!id || resetandoChat) return
 
-  function handleSalvarPersona() {
-    if (!id || !conversa) return
-
-    const relationshipType = draftRelationshipType ?? conversa.relationshipType
-    const currentMood = draftCurrentMood ?? conversa.currentMood
-
-    if (
-      relationshipType === conversa.relationshipType &&
-      currentMood === conversa.currentMood
-    ) {
-      return
-    }
-
-    salvarPersona({
-      conversationId: id,
-      relationshipType,
-      currentMood,
+    resetarChat(undefined, {
+      onSettled: () => setMenuAberto(false),
     })
   }
 
@@ -84,12 +60,8 @@ export function useChatPage() {
     loadingMensagens,
     enviar,
     enviando,
+    resetarChat: handleResetarChat,
+    resetandoChat,
     navigate,
-    draftRelationshipType,
-    setDraftRelationshipType,
-    draftCurrentMood,
-    setDraftCurrentMood,
-    handleSalvarPersona,
-    salvandoPersona,
   }
 }

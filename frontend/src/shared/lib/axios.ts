@@ -6,6 +6,7 @@ export const api = axios.create({
   baseURL: env.VITE_API_URL,
 })
 
+// Lógica solicitada por Lorenzo: preservar JWT em todas as chamadas reais da API.
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
 

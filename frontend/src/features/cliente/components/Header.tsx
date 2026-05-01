@@ -1,14 +1,18 @@
 import { Link } from 'react-router'
-import { ShieldCheck, Bell, Wallet, User, LogOut } from 'lucide-react'
+import { ShieldCheck, Bell, Wallet } from 'lucide-react'
 import clsx from 'clsx'
 import { useScrollDirection } from '@/shared/hooks/useScrollDirection'
 import { useCarteira } from '@/features/cliente/carteira/hooks/useCarteira'
-import { useLogout } from '@/features/auth/hooks/useLogout'
+import { usePerfil } from '@/features/cliente/perfil/hooks/usePerfil'
 
 export function Header() {
   const scrollDirection = useScrollDirection()
   const { data: carteira } = useCarteira()
-  const { logout } = useLogout()
+  const { data: perfil } = usePerfil()
+
+  const iniciais = perfil?.nome
+    ? perfil.nome.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()
+    : '?'
 
   return (
     <header
@@ -17,6 +21,7 @@ export function Header() {
         scrollDirection === 'down' ? '-translate-y-full' : 'translate-y-0'
       )}
     >
+      {/* Logo */}
       <div className="flex items-center gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600">
           <ShieldCheck size={14} className="text-white" />
@@ -26,7 +31,9 @@ export function Header() {
         </span>
       </div>
 
+      {/* Ações direita */}
       <div className="flex items-center gap-3">
+        {/* Carteira + créditos */}
         <Link
           to="/cliente/carteira"
           className="flex h-9 items-center gap-2 rounded-full bg-zinc-800 px-3 text-white transition hover:bg-zinc-700"
@@ -35,33 +42,21 @@ export function Header() {
           <span className="text-sm font-medium">{carteira?.creditos ?? 0}</span>
         </Link>
 
+        {/* Notificações */}
         <Link
           to="/cliente/notificacoes"
           className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-white transition hover:bg-zinc-700"
-          aria-label="Ir para notificações"
-          title="Notificações"
         >
           <Bell size={18} />
         </Link>
 
+        {/* Perfil */}
         <Link
           to="/cliente/perfil"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-white transition hover:bg-zinc-700"
-          aria-label="Ir para perfil"
-          title="Perfil"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 text-white text-xs font-bold transition hover:bg-violet-500"
         >
-          <User size={18} />
+          {iniciais}
         </Link>
-
-        <button
-          type="button"
-          onClick={logout}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-white transition hover:bg-red-600"
-          aria-label="Sair da conta"
-          title="Sair"
-        >
-          <LogOut size={18} />
-        </button>
       </div>
     </header>
   )

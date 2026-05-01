@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router'
+import { NavLink } from 'react-router'
 import {
   Rss,
   Compass,
@@ -11,7 +11,6 @@ import {
   Wallet,
   User,
   Settings,
-  LogOut,
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
@@ -40,13 +39,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
-  const navigate = useNavigate()
-  const { user, clearAuth } = useAuthStore()
-
-  function handleLogout() {
-    clearAuth()
-    navigate('/sign-in')
-  }
+  const { user } = useAuthStore()
 
   return (
     <aside
@@ -124,11 +117,11 @@ export function Sidebar() {
             {!collapsed && <span>Configurações</span>}
           </NavLink>
 
-          {/* Usuário + Sair */}
+          {/* Usuário */}
           <div
             className={clsx(
               'flex items-center rounded-lg px-3 py-2',
-              collapsed ? 'flex-col gap-2 px-2' : 'justify-between'
+              collapsed ? 'justify-center px-2' : 'justify-between'
             )}
           >
             <div className="flex items-center gap-2 overflow-hidden">
@@ -139,14 +132,7 @@ export function Sidebar() {
                 <span className="truncate text-xs text-zinc-300">{user?.name}</span>
               )}
             </div>
-
-            <button
-              onClick={handleLogout}
-              title="Sair"
-              className="text-zinc-500 transition hover:text-red-400"
-            >
-              <LogOut size={collapsed ? 16 : 14} />
-            </button>
+            {/* Lógica solicitada por Lorenzo: logout global removido; saída fica somente no Perfil. */}
           </div>
 
         </div>

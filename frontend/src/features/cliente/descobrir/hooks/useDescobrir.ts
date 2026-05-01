@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react'
 import type { Atriz } from '@/shared/types/atriz'
 import { useAtrizes } from '@/features/cliente/descobrir/hooks/useAtrizes'
-import { mockAtrizes } from '@/mocks/data/atrizes'
-import { enrichAtriz } from '@/shared/fallbacks/actresses'
+import * as mockData from '@/mocks/data/atrizes'
 
 type Tab = 'descobrir' | 'buscar'
+
+const mockAtrizes = ((mockData as { mockAtrizes?: Atriz[]; atrizes?: Atriz[] }).mockAtrizes
+  ?? (mockData as { mockAtrizes?: Atriz[]; atrizes?: Atriz[] }).atrizes
+  ?? [])
 
 function normalizeKey(value?: string | number | null) {
   return String(value ?? '')
@@ -33,8 +36,7 @@ function getAtrizIdentityKeys(atriz: Atriz) {
   if (nome) keys.add(`nome:${nome}`)
   if (nomeSlug) keys.add(`slug:${nomeSlug}`)
 
-  // Proteção específica contra a regressão Sofia real x Sofia mock.
-  // Se a Sofia real veio da API, qualquer Sofia do mock é tratada como duplicada.
+  // REGRA DE OURO: se a Sofia real veio da API, qualquer Sofia mock é duplicada.
   if (slug.includes('sofia') || nome.includes('sofia') || firstName === 'sofia') {
     keys.add('alias:sofia')
   }
@@ -63,39 +65,26 @@ function rotateList<T>(list: T[], startIndex: number) {
 }
 
 function normalizeRealAtriz(atriz: Atriz): Atriz {
-  const enriched = enrichAtriz(atriz)
+  const avatar = atriz.avatar || atriz.thumbnailUrl || atriz.banner || ''
+  const banner = atriz.banner || atriz.thumbnailUrl || avatar
+  const videoUrl = atriz.videoUrl || banner || avatar
 
   return {
-    ...enriched,
     ...atriz,
     // REGRA DE OURO: registros vindos da API/Supabase preservam o ID real.
     id: String(atriz.id),
-    slug: atriz.slug || enriched.slug || String(atriz.id),
-    nome: atriz.nome || enriched.nome,
-    avatar: atriz.avatar || enriched.avatar,
-    banner: atriz.banner || enriched.banner || atriz.avatar || enriched.avatar,
-    videoUrl:
-      atriz.videoUrl ||
-      enriched.videoUrl ||
-      atriz.banner ||
-      enriched.banner ||
-      atriz.avatar ||
-      enriched.avatar,
-    thumbnailUrl: atriz.thumbnailUrl ?? enriched.thumbnailUrl ?? null,
-    descricao: atriz.descricao || enriched.descricao || '',
-    idade: atriz.idade || enriched.idade || 0,
-    altura: atriz.altura || enriched.altura || '',
-    fotos: atriz.fotos?.length ? atriz.fotos : enriched.fotos || [],
-    // Atriz real NUNCA pode ser bloqueada como fallback.
+    slug: atriz.slug || String(atriz.id),
+    avatar,
+    banner,
+    videoUrl,
+    fotos: atriz.fotos?.length ? atriz.fotos : [avatar, banner, videoUrl].filter(Boolean),
     isFallback: false,
   }
 }
 
 function normalizeFallbackAtriz(atriz: Atriz): Atriz {
-  const enriched = enrichAtriz(atriz)
-
   return {
-    ...enriched,
+    ...atriz,
     isFallback: true,
   }
 }
@@ -153,16 +142,5 @@ export function useDescobrir() {
   const rumoAoTopo = rotateList(atrizes, 8).slice(0, 8)
   const recentes = atrizes.slice(0, 5)
 
-  return {
-    tab,
-    setTab,
-    busca,
-    setBusca,
-    atrizesFiltradas,
-    topCreators,
-    bombandoNoChat,
-    novosCriadores,
-    rumoAoTopo,
-    recentes,
-  }
+  return { tab, setTab, busca, setBusca, atrizesFiltradas, topCreators, bombandoNoChat, novosCriadores, rumoAoTopo, recentes }
 }

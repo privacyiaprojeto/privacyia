@@ -8,11 +8,13 @@ export interface Atriz {
 export interface Conversa {
   id: string
   atriz: Atriz
-  relationshipType: string
-  currentMood: string
   ultimaMensagem: string
   ultimaHora: string
   naoLidas: number
+  updatedAt?: string | null
+  updated_at?: string | null
+  createdAt?: string | null
+  created_at?: string | null
 }
 
 export interface Mensagem {
@@ -21,7 +23,6 @@ export interface Mensagem {
   conteudo: string
   de: 'cliente' | 'atriz'
   criadaEm: string
-  audioUrl?: string | null
 }
 
 export interface AtrizPerfil {
@@ -41,11 +42,4 @@ export interface MediaGerada {
   tipo: 'foto' | 'video'
   url: string
   criadaEm: string
-}
-
-export interface UpdateConversationPersonaResponse {
-  id: string
-  relationshipType: string
-  currentMood: string
-  updatedAt: string
 }

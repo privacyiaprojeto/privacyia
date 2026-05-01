@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { getConversas } from '@/features/cliente/chat/api/getConversas'
-import { enrichConversations } from '@/shared/fallbacks/actresses'
 
 export function useConversas() {
   return useQuery({
@@ -8,10 +7,12 @@ export function useConversas() {
     queryFn: async () => {
       try {
         return await getConversas()
-      } catch {
+      } catch (error) {
+        console.error('Erro ao buscar conversas reais:', error)
         return []
       }
     },
-    select: (data) => enrichConversations(data),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   })
 }

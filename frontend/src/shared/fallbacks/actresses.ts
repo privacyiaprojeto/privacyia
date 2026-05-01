@@ -2,13 +2,8 @@ import type { Atriz } from '@/shared/types/atriz'
 import type { Secao } from '@/features/cliente/descobrir/types'
 import type { AtrizPerfilPublico, HistoricoItem, LiveActionItem, LiveAudioItem } from '@/features/cliente/atriz-perfil/types'
 import type { AtrizPerfil as ChatAtrizPerfil, Conversa, MediaGerada, Mensagem } from '@/features/cliente/chat/types'
-import {
-  DEFAULT_CURRENT_MOOD,
-  DEFAULT_RELATIONSHIP_TYPE,
-} from '@/features/cliente/chat/personaOptions'
 import { mockAtrizes } from '@/mocks/data/atrizes'
 import { secoes as mockSecoes } from '@/mocks/data/secoes'
-import { conversas as mockConversas, mensagens as mockMensagens } from '@/mocks/data/chat'
 
 const actionsFallback = [
   { id: 'acao-1', nome: 'Sorriso especial', nivelRequerido: 1, bloqueado: false },
@@ -84,8 +79,6 @@ export function enrichAtriz(atriz?: Partial<Atriz> | null): Atriz {
     idade: atriz?.idade || mock?.idade || 24,
     altura: atriz?.altura || mock?.altura || '1.68m',
     fotos: merged.fotos,
-    thumbnailUrl: atriz?.thumbnailUrl || mock?.thumbnailUrl || merged.avatar,
-    runpodVoiceId: atriz?.runpodVoiceId || mock?.runpodVoiceId || null,
   }
 }
 
@@ -119,8 +112,6 @@ export function enrichAtrizPublicProfile(atriz?: Partial<AtrizPerfilPublico> | n
     idade: atriz?.idade,
     altura: atriz?.altura,
     fotos: atriz?.fotos,
-    thumbnailUrl: atriz?.thumbnailUrl,
-    runpodVoiceId: atriz?.runpodVoiceId,
   })
 
   const historico = atriz?.historico?.length ? atriz.historico : buildHistorico(baseAtriz)
@@ -211,19 +202,14 @@ export function enrichTimeline(atrizId: string, timeline?: MediaGerada[] | null)
 
 export function enrichConversations(list?: Conversa[] | null): Conversa[] {
   if (!list?.length) {
-    return mockConversas.map((conversation) => ({
-      ...conversation,
-      relationshipType: conversation.relationshipType || DEFAULT_RELATIONSHIP_TYPE,
-      currentMood: conversation.currentMood || DEFAULT_CURRENT_MOOD,
-    }))
+    return []
   }
 
   return list.map((item) => {
     const fallback = byId(item.atriz.id) || byName(item.atriz.nome)
+
     return {
       ...item,
-      relationshipType: item.relationshipType || DEFAULT_RELATIONSHIP_TYPE,
-      currentMood: item.currentMood || DEFAULT_CURRENT_MOOD,
       atriz: {
         ...item.atriz,
         avatar: item.atriz.avatar || fallback?.avatar || null,
@@ -236,7 +222,6 @@ export function enrichConversations(list?: Conversa[] | null): Conversa[] {
   })
 }
 
-export function enrichMessages(conversationId: string, list?: Mensagem[] | null): Mensagem[] {
-  if (list?.length) return list
-  return mockMensagens.filter((item) => item.conversaId === conversationId)
+export function enrichMessages(_conversationId: string, list?: Mensagem[] | null): Mensagem[] {
+  return list || []
 }

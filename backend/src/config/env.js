@@ -21,11 +21,14 @@ const envSchema = z.object({
   RUNPOD_BASE_URL: z.string().url().default('https://api.runpod.ai/v2'),
   RUNPOD_IMAGE_ENDPOINT_ID: z.string().optional().default(''),
 
-  // Endpoint principal de áudio: Fish Speech
-  RUNPOD_FISH_SPEECH_ENDPOINT_ID: z.string().optional().default(''),
+  // Endpoint antigo de áudio: Fish Speech
+RUNPOD_FISH_SPEECH_ENDPOINT_ID: z.string().optional().default(''),
 
-  // Endpoint legado/fallback de áudio
-  RUNPOD_AUDIO_ENDPOINT_ID: z.string().optional().default(''),
+// Endpoint novo de áudio: Qwen3-TTS / CosyVoice
+RUNPOD_QWEN_TTS_ENDPOINT_ID: z.string().optional().default(''),
+
+// Endpoint legado/fallback de áudio
+RUNPOD_AUDIO_ENDPOINT_ID: z.string().optional().default(''),
 
   RUNPOD_AUDIO_TIMEOUT_MS: z.coerce.number().default(600000),
   RUNPOD_AUDIO_POLL_INTERVAL_MS: z.coerce.number().default(3000),

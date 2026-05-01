@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { getMensagens } from '@/features/cliente/chat/api/getMensagens'
-import { enrichMessages } from '@/shared/fallbacks/actresses'
 
 export function useMensagens(conversaId: string) {
   return useQuery({
@@ -8,11 +7,13 @@ export function useMensagens(conversaId: string) {
     queryFn: async () => {
       try {
         return await getMensagens(conversaId)
-      } catch {
+      } catch (error) {
+        console.error('Erro ao buscar mensagens reais:', error)
         return []
       }
     },
     enabled: !!conversaId,
-    select: (data) => enrichMessages(conversaId, data),
+    staleTime: 5_000,
+    refetchOnWindowFocus: false,
   })
 }

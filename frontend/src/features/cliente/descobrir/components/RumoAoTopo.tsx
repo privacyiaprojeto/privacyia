@@ -58,29 +58,26 @@ export function RumoAoTopo({ atrizes }: RumoAoTopoProps) {
         onClickCapture={onClickCapture}
         className="flex gap-3 overflow-x-auto px-4 pb-3 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-grab active:cursor-grabbing select-none"
       >
-        {atrizes.map((atriz) => {
-          const routeId = atriz.id || atriz.slug
-
-          return (
-            <Link
-              key={atriz.id}
-              to={`/cliente/atriz/${routeId}`}
-              className="flex flex-none flex-col items-center gap-2"
-            >
-              <div className="h-48 w-36 overflow-hidden rounded-2xl">
-                <img
-                  src={atriz.avatar}
-                  alt={atriz.nome}
-                  className="h-full w-full object-cover"
-                  draggable={false}
-                />
-              </div>
-              <span className="w-32 truncate text-center text-[10px] text-zinc-400">
-                {atriz.nome}
-              </span>
-            </Link>
-          )
-        })}
+        {atrizes.map((atriz) => (
+          <Link
+            key={atriz.id}
+            // Lógica solicitada por Lorenzo: mantém Link/layout original e abre o perfil pelo ID real quando vier da API.
+            to={`/cliente/atriz/${atriz.id}`}
+            className="flex flex-none flex-col items-center gap-2"
+          >
+            <div className="h-48 w-36 overflow-hidden rounded-2xl">
+              <img
+                src={atriz.avatar}
+                alt={atriz.nome}
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
+            </div>
+            <span className="w-32 truncate text-center text-[10px] text-zinc-400">
+              {atriz.nome}
+            </span>
+          </Link>
+        ))}
       </div>
     </div>
   )
