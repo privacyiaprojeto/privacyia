@@ -11,7 +11,7 @@ export interface ItemGerado {
   id: string
   atrizId: string
   atrizNome: string
-  tipo: 'imagem' | 'video'
+  tipo: 'imagem' | 'video' | 'audio' | 'foto' | 'live_audio' | 'live_action' | string
   url?: string
   status: StatusGeracao
   progresso: number

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useAtrizesAssinadas } from '@/features/cliente/nsfw/hooks/useAtrizesAssinadas'
 import { useOpcoesImagem } from '@/features/cliente/nsfw/gerar-imagem/hooks/useOpcoesImagem'
@@ -8,6 +8,7 @@ import { useDenunciarImagem } from '@/features/cliente/nsfw/gerar-imagem/hooks/u
 import { useCreditos } from '@/shared/hooks/useCreditos'
 import { buildPromptImagem } from '@/features/cliente/nsfw/utils/buildPrompt'
 import { CUSTO_IMAGEM } from '@/features/cliente/nsfw/types'
+import type { ItemGerado } from '@/features/cliente/nsfw/types'
 import type { TipoOpcaoImagem } from '@/features/cliente/nsfw/gerar-imagem/types'
 
 const SELECOES_VAZIAS: Record<TipoOpcaoImagem, string | null> = {
@@ -17,16 +18,31 @@ const SELECOES_VAZIAS: Record<TipoOpcaoImagem, string | null> = {
   roupa: null,
 }
 
+type FeedbackGeracao =
+  | { kind: 'processing'; message: string }
+  | { kind: 'success'; message: string }
+  | { kind: 'error'; message: string }
+  | null
+
 export function useGerarImagemPage() {
   const [searchParams] = useSearchParams()
   const [atrizId, setAtrizId] = useState<string | null>(searchParams.get('atrizId'))
   const [selecionadas, setSelecionadas] = useState<Record<TipoOpcaoImagem, string | null>>(SELECOES_VAZIAS)
   const [modalAberto, setModalAberto] = useState(false)
+  const [feedback, setFeedback] = useState<FeedbackGeracao>(null)
+  const [midiaAtiva, setMidiaAtiva] = useState<ItemGerado | null>(null)
 
   const { data: atrizes = [], isLoading: loadingAtrizes } = useAtrizesAssinadas()
   const { data: opcoes = [], isLoading: loadingOpcoes } = useOpcoesImagem()
-  const { data: gerados = [], isLoading: loadingGerados } = useGeradosImagem()
-  const { data: creditosData } = useCreditos()
+  const {
+    data: gerados = [],
+    isLoading: loadingGerados,
+    refetch: refetchGerados,
+  } = useGeradosImagem()
+  const {
+    data: creditosData,
+    refetch: refetchCreditos,
+  } = useCreditos()
   const gerarImagem = useGerarImagem()
   const denunciarImagem = useDenunciarImagem()
 
@@ -40,6 +56,19 @@ export function useGerarImagemPage() {
     return buildPromptImagem(atrizSelecionada.nome, selecionadas, opcoes)
   }, [atrizSelecionada, selecionadas, opcoes])
 
+  const geradosVisiveis = useMemo(() => {
+    return [...gerados]
+      .filter((item) => {
+        const status = String(item.status || '').toLowerCase()
+        return !['erro', 'falhou', 'failed', 'error'].includes(status)
+      })
+      .sort((a, b) => {
+        const aDate = new Date(a.criadaEm || 0).getTime()
+        const bDate = new Date(b.criadaEm || 0).getTime()
+        return bDate - aDate
+      })
+  }, [gerados])
+
   function toggleOpcao(categoria: TipoOpcaoImagem, id: string) {
     setSelecionadas((prev) => ({
       ...prev,
@@ -48,8 +77,41 @@ export function useGerarImagemPage() {
   }
 
   function handleGerar() {
-    if (!atrizId) return
-    gerarImagem.mutate({ atrizId, ...selecionadas })
+    if (!atrizId || gerarImagem.isPending) return
+
+    setFeedback({
+      kind: 'processing',
+      message: 'A IA está gerando sua imagem. Isso pode levar alguns segundos...',
+    })
+
+    gerarImagem.mutate(
+      {
+        atrizId,
+        posicaoId: selecionadas.posicao,
+        ambienteId: selecionadas.ambiente,
+        acessorioId: selecionadas.acessorio,
+        roupaId: selecionadas.roupa,
+      },
+      {
+        onSuccess: async () => {
+          await Promise.allSettled([
+            refetchGerados(),
+            refetchCreditos(),
+          ])
+
+          setFeedback({
+            kind: 'success',
+            message: 'Imagem gerada com sucesso. Sua galeria foi atualizada.',
+          })
+        },
+        onError: () => {
+          setFeedback({
+            kind: 'error',
+            message: 'Não foi possível concluir esta geração agora. Tente novamente em instantes.',
+          })
+        },
+      },
+    )
   }
 
   function selecionarAtriz(id: string) {
@@ -57,11 +119,29 @@ export function useGerarImagemPage() {
     setSelecionadas(SELECOES_VAZIAS)
   }
 
+  function abrirMidia(item: ItemGerado) {
+    setMidiaAtiva(item)
+  }
+
+  function fecharMidia() {
+    setMidiaAtiva(null)
+  }
+
+  useEffect(() => {
+    if (!feedback || feedback.kind === 'processing') return
+
+    const timer = window.setTimeout(() => {
+      setFeedback(null)
+    }, 4500)
+
+    return () => window.clearTimeout(timer)
+  }, [feedback])
+
   return {
     atrizes,
     atrizSelecionada,
     opcoes,
-    gerados,
+    gerados: geradosVisiveis,
     creditosData,
     creditos,
     semCreditos,
@@ -69,6 +149,8 @@ export function useGerarImagemPage() {
     prompt,
     selecionadas,
     modalAberto,
+    feedback,
+    midiaAtiva,
     loadingAtrizes,
     loadingOpcoes,
     loadingGerados,
@@ -77,6 +159,8 @@ export function useGerarImagemPage() {
     toggleOpcao,
     handleGerar,
     selecionarAtriz,
+    abrirMidia,
+    fecharMidia,
     setModalAberto,
   }
 }

@@ -1,10 +1,11 @@
-import { Flag, ImageIcon, Video } from 'lucide-react'
+import { Flag, ImageIcon, Loader2, Music4, PlayCircle, Video } from 'lucide-react'
 import type { ItemGerado } from '@/features/cliente/nsfw/types'
 
 interface PainelGeradosProps {
   items: ItemGerado[]
   isLoading: boolean
   onDenunciar: (id: string) => void
+  onOpenItem?: (item: ItemGerado) => void
   variant?: 'list' | 'grid'
 }
 
@@ -15,6 +16,29 @@ function formatarData(iso: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function isAudioItem(tipo?: string, url?: string) {
+  const value = `${tipo || ''} ${url || ''}`.toLowerCase()
+
+  return (
+    value.includes('audio') ||
+    value.endsWith('.mp3') ||
+    value.endsWith('.wav') ||
+    value.endsWith('.ogg') ||
+    value.endsWith('.m4a')
+  )
+}
+
+function isVideoItem(tipo?: string, url?: string) {
+  const value = `${tipo || ''} ${url || ''}`.toLowerCase()
+
+  return (
+    value.includes('video') ||
+    value.endsWith('.mp4') ||
+    value.endsWith('.webm') ||
+    value.endsWith('.mov')
+  )
 }
 
 function ItemAndamento({ item }: { item: ItemGerado }) {
@@ -46,10 +70,65 @@ function ItemAndamento({ item }: { item: ItemGerado }) {
   )
 }
 
-export function PainelGerados({ items, isLoading, onDenunciar, variant = 'list' }: PainelGeradosProps) {
+function GridMidia({ item, onOpenItem }: { item: ItemGerado; onOpenItem?: (item: ItemGerado) => void }) {
+  const audio = isAudioItem(item.tipo, item.url)
+  const video = isVideoItem(item.tipo, item.url)
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenItem?.(item)}
+      className="group relative block w-full overflow-hidden rounded-xl bg-zinc-900 text-left transition hover:ring-1 hover:ring-violet-500/70"
+      disabled={!item.url}
+      aria-label={video ? 'Abrir vídeo gerado' : audio ? 'Abrir áudio gerado' : 'Abrir mídia gerada'}
+    >
+      {audio && (
+        <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 bg-zinc-950 text-zinc-300">
+          <Music4 size={30} />
+          <span className="text-xs font-medium">Reproduzir áudio</span>
+        </div>
+      )}
+
+      {video && item.url && (
+        <div className="relative aspect-[3/4] w-full bg-black">
+          <video
+            src={item.url}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 transition group-hover:bg-black/10">
+            <PlayCircle className="h-11 w-11 text-white/90 drop-shadow" />
+          </div>
+        </div>
+      )}
+
+      {!audio && !video && item.url && (
+        <img
+          src={item.url}
+          alt="Gerado"
+          className="aspect-[3/4] w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+        />
+      )}
+
+      {!item.url && (
+        <div className="flex aspect-[3/4] w-full items-center justify-center bg-zinc-950 text-zinc-600">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      )}
+
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-2">
+        <p className="text-xs font-medium text-zinc-200">{item.atrizNome}</p>
+        <p className="text-[10px] text-zinc-400">{formatarData(item.criadaEm)}</p>
+      </div>
+    </button>
+  )
+}
+
+export function PainelGerados({ items, isLoading, onDenunciar, onOpenItem, variant = 'list' }: PainelGeradosProps) {
   const emAndamento = items.filter((i) => i.status === 'em_andamento')
   const concluidos = items.filter((i) => i.status === 'concluido')
-  const comErro = items.filter((i) => i.status === 'erro')
 
   return (
     <div className="space-y-3">
@@ -75,39 +154,21 @@ export function PainelGerados({ items, isLoading, onDenunciar, variant = 'list' 
         </div>
       )}
 
-      {comErro.map((item) => (
-        <div key={item.id} className="overflow-hidden rounded-xl border border-red-900/40 bg-zinc-900 px-4 py-3">
-          <span className="text-sm font-medium text-zinc-300">{item.atrizNome}</span>
-          <p className="text-xs text-red-400">Erro na geração.</p>
-        </div>
-      ))}
-
       {concluidos.length > 0 && (
         variant === 'grid' ? (
           <div className="grid grid-cols-2 gap-2">
             {concluidos.map((item) => (
-              <div key={item.id} className="relative overflow-hidden rounded-xl bg-zinc-900">
-                {item.tipo === 'imagem' && item.url && (
-                  <img src={item.url} alt="Gerado" className="aspect-[3/4] w-full object-cover" />
-                )}
-                {item.tipo === 'video' && item.url && (
-                  <video
-                    src={item.url}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    className="aspect-[3/4] w-full object-cover"
-                  />
-                )}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                  <p className="text-xs font-medium text-zinc-200">{item.atrizNome}</p>
-                  <p className="text-[10px] text-zinc-400">{formatarData(item.criadaEm)}</p>
-                </div>
+              <div key={item.id} className="relative">
+                <GridMidia item={item} onOpenItem={onOpenItem} />
+
                 {!item.denunciado && (
                   <button
-                    onClick={() => onDenunciar(item.id)}
-                    className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-[10px] text-zinc-300 hover:bg-red-500/30 hover:text-red-400 transition"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onDenunciar(item.id)
+                    }}
+                    className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1 rounded-lg bg-black/50 px-2 py-1 text-[10px] text-zinc-300 transition hover:bg-red-500/30 hover:text-red-400"
                   >
                     <Flag size={10} />
                   </button>
@@ -117,33 +178,64 @@ export function PainelGerados({ items, isLoading, onDenunciar, variant = 'list' 
           </div>
         ) : (
           <div className="space-y-2">
-            {concluidos.map((item) => (
-              <div key={item.id} className="flex gap-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-3">
-                {item.tipo === 'imagem' && item.url && (
-                  <img src={item.url} alt="Gerado" className="h-24 w-20 flex-shrink-0 rounded-lg object-cover" />
-                )}
-                {item.tipo === 'video' && item.url && (
-                  <video src={item.url} autoPlay muted loop playsInline className="h-24 w-20 flex-shrink-0 rounded-lg object-cover" />
-                )}
-                <div className="flex min-w-0 flex-1 flex-col justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-200">{item.atrizNome}</p>
-                    <p className="text-xs text-zinc-500">{formatarData(item.criadaEm)}</p>
+            {concluidos.map((item) => {
+              const audio = isAudioItem(item.tipo, item.url)
+              const video = isVideoItem(item.tipo, item.url)
+
+              return (
+                <div key={item.id} className="flex gap-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-3">
+                  <button
+                    type="button"
+                    onClick={() => onOpenItem?.(item)}
+                    className="relative h-24 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-950"
+                    disabled={!item.url}
+                    aria-label={video ? 'Abrir vídeo gerado' : audio ? 'Abrir áudio gerado' : 'Abrir mídia gerada'}
+                  >
+                    {audio && (
+                      <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                        <Music4 size={22} />
+                      </div>
+                    )}
+                    {video && item.url && (
+                      <>
+                        <video
+                          src={item.url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                          <PlayCircle className="h-7 w-7 text-white/90" />
+                        </div>
+                      </>
+                    )}
+                    {!audio && !video && item.url && (
+                      <img src={item.url} alt="Gerado" className="h-full w-full object-cover" />
+                    )}
+                  </button>
+
+                  <div className="flex min-w-0 flex-1 flex-col justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-zinc-200">{item.atrizNome}</p>
+                      <p className="text-xs text-zinc-500">{formatarData(item.criadaEm)}</p>
+                    </div>
+                    {!item.denunciado ? (
+                      <button
+                        type="button"
+                        onClick={() => onDenunciar(item.id)}
+                        className="flex items-center gap-1 self-start rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition hover:bg-red-500/10 hover:text-red-400"
+                      >
+                        <Flag size={12} />
+                        Denunciar
+                      </button>
+                    ) : (
+                      <span className="self-start text-xs text-zinc-600">Denunciado</span>
+                    )}
                   </div>
-                  {!item.denunciado ? (
-                    <button
-                      onClick={() => onDenunciar(item.id)}
-                      className="flex items-center gap-1 self-start rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition hover:bg-red-500/10 hover:text-red-400"
-                    >
-                      <Flag size={12} />
-                      Denunciar
-                    </button>
-                  ) : (
-                    <span className="self-start text-xs text-zinc-600">Denunciado</span>
-                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )
       )}

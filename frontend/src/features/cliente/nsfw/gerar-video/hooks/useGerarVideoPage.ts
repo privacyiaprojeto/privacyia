@@ -8,6 +8,7 @@ import { useDenunciarVideo } from '@/features/cliente/nsfw/gerar-video/hooks/use
 import { useCreditos } from '@/shared/hooks/useCreditos'
 import { buildPromptVideo } from '@/features/cliente/nsfw/utils/buildPrompt'
 import { CUSTO_VIDEO } from '@/features/cliente/nsfw/types'
+import type { ItemGerado } from '@/features/cliente/nsfw/types'
 import type { TipoOpcaoVideo } from '@/features/cliente/nsfw/gerar-video/types'
 
 const SELECOES_VAZIAS: Record<TipoOpcaoVideo, string | null> = {
@@ -21,6 +22,7 @@ export function useGerarVideoPage() {
   const [atrizId, setAtrizId] = useState<string | null>(searchParams.get('atrizId'))
   const [selecionadas, setSelecionadas] = useState<Record<TipoOpcaoVideo, string | null>>(SELECOES_VAZIAS)
   const [modalAberto, setModalAberto] = useState(false)
+  const [midiaSelecionada, setMidiaSelecionada] = useState<ItemGerado | null>(null)
 
   const { data: atrizes = [], isLoading: loadingAtrizes } = useAtrizesAssinadas()
   const { data: opcoes = [], isLoading: loadingOpcoes } = useOpcoesVideo()
@@ -56,6 +58,15 @@ export function useGerarVideoPage() {
     setSelecionadas(SELECOES_VAZIAS)
   }
 
+  function abrirMidia(item: ItemGerado) {
+    if (!item.url || item.status !== 'concluido') return
+    setMidiaSelecionada(item)
+  }
+
+  function fecharMidia() {
+    setMidiaSelecionada(null)
+  }
+
   return {
     atrizes,
     atrizSelecionada,
@@ -68,6 +79,7 @@ export function useGerarVideoPage() {
     prompt,
     selecionadas,
     modalAberto,
+    midiaSelecionada,
     loadingAtrizes,
     loadingOpcoes,
     loadingGerados,
@@ -77,5 +89,7 @@ export function useGerarVideoPage() {
     handleGerar,
     selecionarAtriz,
     setModalAberto,
+    abrirMidia,
+    fecharMidia,
   }
 }

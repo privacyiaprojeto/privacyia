@@ -211,3 +211,181 @@ export async function buyCredits(profileId, input) {
     creditos: newCredits,
   }
 }
+
+function isMissingRpcError(error) {
+  return error?.code === '42883' || /function .* does not exist/i.test(String(error?.message || ''))
+}
+
+async function debitCreditsWithOptimisticLock(profileId, amount, reason, reference = {}) {
+  const maxAttempts = 3
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('credits')
+      .eq('id', profileId)
+      .single()
+
+    if (profileError) {
+      throw new ApiError(500, 'Erro ao validar saldo de créditos.', profileError)
+    }
+
+    const currentCredits = Number(profile.credits || 0)
+
+    if (currentCredits < amount) {
+      throw new ApiError(409, 'Créditos insuficientes.')
+    }
+
+    const newCredits = currentCredits - amount
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('profiles')
+      .update({ credits: newCredits })
+      .eq('id', profileId)
+      .eq('credits', currentCredits)
+      .select('credits')
+      .maybeSingle()
+
+    if (updateError) {
+      throw new ApiError(500, 'Erro ao debitar créditos.', updateError)
+    }
+
+    if (!updated) {
+      continue
+    }
+
+    const { error: ledgerError } = await supabaseAdmin
+      .from('credit_ledger')
+      .insert({
+        profile_id: profileId,
+        direction: 'saida',
+        amount,
+        reason,
+        reference_type: reference.referenceType || null,
+        reference_id: reference.referenceId || null,
+      })
+
+    if (ledgerError) {
+      throw new ApiError(500, 'Erro ao registrar débito de créditos.', ledgerError)
+    }
+
+    return {
+      saldo: Number(updated.credits || 0),
+      creditos: Number(updated.credits || 0),
+      debited: amount,
+    }
+  }
+
+  throw new ApiError(409, 'Saldo alterado durante a operação. Tente novamente.')
+}
+
+export async function debitCreditsAtomically(profileId, amount, reason, reference = {}) {
+  const finalAmount = Number(amount || 0)
+
+  if (!profileId) {
+    throw new ApiError(400, 'profileId obrigatório para débito de créditos.')
+  }
+
+  if (!Number.isInteger(finalAmount) || finalAmount <= 0) {
+    throw new ApiError(400, 'Quantidade de créditos inválida para débito.')
+  }
+
+  const { data, error } = await supabaseAdmin.rpc('debit_credits_atomic', {
+    p_profile_id: profileId,
+    p_amount: finalAmount,
+    p_reason: reason,
+    p_reference_type: reference.referenceType || null,
+    p_reference_id: reference.referenceId || null,
+  })
+
+  if (!error) {
+    const saldo = Number(data || 0)
+    return {
+      saldo,
+      creditos: saldo,
+      debited: finalAmount,
+    }
+  }
+
+  if (!isMissingRpcError(error)) {
+    if (/insuficientes/i.test(String(error.message || ''))) {
+      throw new ApiError(409, 'Créditos insuficientes.', error)
+    }
+
+    throw new ApiError(500, 'Erro ao debitar créditos de forma atômica.', error)
+  }
+
+  console.warn('[Wallet] RPC debit_credits_atomic ausente. Usando fallback com lock otimista. Rode o SQL do patch para ativar débito 100% transacional.')
+  return debitCreditsWithOptimisticLock(profileId, finalAmount, reason, reference)
+}
+
+export async function refundCredits(profileId, amount, reason, reference = {}) {
+  const finalAmount = Number(amount || 0)
+
+  if (!profileId || !Number.isInteger(finalAmount) || finalAmount <= 0) {
+    return null
+  }
+
+  const { data, error } = await supabaseAdmin.rpc('refund_credits_atomic', {
+    p_profile_id: profileId,
+    p_amount: finalAmount,
+    p_reason: reason,
+    p_reference_type: reference.referenceType || null,
+    p_reference_id: reference.referenceId || null,
+  })
+
+  if (!error) {
+    const saldo = Number(data || 0)
+    return {
+      saldo,
+      creditos: saldo,
+      refunded: finalAmount,
+    }
+  }
+
+  if (!isMissingRpcError(error)) {
+    throw new ApiError(500, 'Erro ao estornar créditos.', error)
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('credits')
+    .eq('id', profileId)
+    .single()
+
+  if (profileError) {
+    throw new ApiError(500, 'Erro ao buscar saldo para estorno.', profileError)
+  }
+
+  const newCredits = Number(profile.credits || 0) + finalAmount
+
+  const { error: updateError } = await supabaseAdmin
+    .from('profiles')
+    .update({ credits: newCredits })
+    .eq('id', profileId)
+
+  if (updateError) {
+    throw new ApiError(500, 'Erro ao estornar créditos.', updateError)
+  }
+
+  const { error: ledgerError } = await supabaseAdmin
+    .from('credit_ledger')
+    .insert({
+      profile_id: profileId,
+      direction: 'entrada',
+      amount: finalAmount,
+      reason,
+      reference_type: reference.referenceType || null,
+      reference_id: reference.referenceId || null,
+    })
+
+  if (ledgerError) {
+    throw new ApiError(500, 'Erro ao registrar estorno no ledger.', ledgerError)
+  }
+
+  return {
+    saldo: newCredits,
+    creditos: newCredits,
+    refunded: finalAmount,
+  }
+}

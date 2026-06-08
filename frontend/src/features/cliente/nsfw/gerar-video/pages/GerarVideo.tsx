@@ -6,6 +6,7 @@ import { TabsGerarNsfw } from '@/features/cliente/nsfw/components/TabsGerarNsfw'
 import { ModalSelecionarAtriz } from '@/features/cliente/nsfw/components/ModalSelecionarAtriz'
 import { PromptAuto } from '@/features/cliente/nsfw/components/PromptAuto'
 import { PainelGerados } from '@/features/cliente/nsfw/components/PainelGerados'
+import { MidiaViewerModal } from '@/features/cliente/nsfw/components/MidiaViewerModal'
 import { SeletorOpcoesVideo } from '@/features/cliente/nsfw/gerar-video/components/SeletorOpcoesVideo'
 import { useGerarVideoPage } from '@/features/cliente/nsfw/gerar-video/hooks/useGerarVideoPage'
 import { CUSTO_VIDEO } from '@/features/cliente/nsfw/types'
@@ -23,6 +24,7 @@ export function GerarVideo() {
     prompt,
     selecionadas,
     modalAberto,
+    midiaSelecionada,
     loadingAtrizes,
     loadingOpcoes,
     loadingGerados,
@@ -32,6 +34,8 @@ export function GerarVideo() {
     handleGerar,
     selecionarAtriz,
     setModalAberto,
+    abrirMidia,
+    fecharMidia,
   } = useGerarVideoPage()
 
   return (
@@ -145,6 +149,7 @@ export function GerarVideo() {
               items={gerados}
               isLoading={loadingGerados}
               onDenunciar={(id) => denunciarVideo.mutate(id)}
+              onOpenItem={abrirMidia}
               variant="grid"
             />
           </div>
@@ -159,6 +164,8 @@ export function GerarVideo() {
           onClose={() => setModalAberto(false)}
         />
       )}
+
+      <MidiaViewerModal item={midiaSelecionada} onClose={fecharMidia} />
     </ClienteLayout>
   )
 }

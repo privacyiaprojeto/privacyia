@@ -8,8 +8,9 @@ export function useGeradosImagem() {
     queryFn: getGeradosImagem,
     refetchInterval: (query) => {
       const items = query.state.data ?? []
-      const temEmAndamento = items.some((i) => i.status === 'em_andamento')
-      return temEmAndamento ? 4000 : false
+      const temEmAndamento = items.some((i) => ['em_andamento', 'processing'].includes(String(i.status || '').toLowerCase()))
+      return temEmAndamento ? 3000 : false
     },
+    refetchOnWindowFocus: true,
   })
 }

@@ -1,9 +1,10 @@
 import { Link } from 'react-router'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Loader2, Sparkles } from 'lucide-react'
 import clsx from 'clsx'
 import { ClienteLayout } from '@/features/cliente/components/ClienteLayout'
 import { TabsGerarNsfw } from '@/features/cliente/nsfw/components/TabsGerarNsfw'
 import { ModalSelecionarAtriz } from '@/features/cliente/nsfw/components/ModalSelecionarAtriz'
+import { MidiaViewerModal } from '@/features/cliente/nsfw/components/MidiaViewerModal'
 import { PromptAuto } from '@/features/cliente/nsfw/components/PromptAuto'
 import { PainelGerados } from '@/features/cliente/nsfw/components/PainelGerados'
 import { SeletorOpcoesImagem } from '@/features/cliente/nsfw/gerar-imagem/components/SeletorOpcoesImagem'
@@ -23,6 +24,8 @@ export function GerarImagem() {
     prompt,
     selecionadas,
     modalAberto,
+    feedback,
+    midiaAtiva,
     loadingAtrizes,
     loadingOpcoes,
     loadingGerados,
@@ -31,6 +34,8 @@ export function GerarImagem() {
     toggleOpcao,
     handleGerar,
     selecionarAtriz,
+    abrirMidia,
+    fecharMidia,
     setModalAberto,
   } = useGerarImagemPage()
 
@@ -40,15 +45,14 @@ export function GerarImagem() {
         <TabsGerarNsfw />
 
         <div className="mt-6 flex flex-col gap-6 lg:flex-row">
-          {/* Painel de geração */}
           <div className="flex-1 space-y-5 lg:max-w-md">
-            {/* Seletor de atriz */}
             <div>
-              <p className="mb-2 text-xs font-medium text-zinc-500 uppercase tracking-wide">Atriz</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Atriz</p>
               {loadingAtrizes ? (
                 <div className="h-24 w-36 animate-pulse rounded-2xl bg-zinc-800" />
               ) : atrizSelecionada ? (
                 <button
+                  type="button"
                   onClick={() => setModalAberto(true)}
                   className="group relative overflow-hidden rounded-2xl ring-1 ring-zinc-700 transition hover:ring-violet-500"
                 >
@@ -66,8 +70,9 @@ export function GerarImagem() {
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setModalAberto(true)}
-                  className="flex h-36 w-28 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-700 text-zinc-500 hover:border-violet-500 hover:text-violet-400 transition"
+                  className="flex h-36 w-28 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-700 text-zinc-500 transition hover:border-violet-500 hover:text-violet-400"
                 >
                   <span className="text-2xl">+</span>
                   <span className="text-xs">Atriz</span>
@@ -75,9 +80,8 @@ export function GerarImagem() {
               )}
             </div>
 
-            {/* Personalize a cena */}
             <div>
-              <p className="mb-2 text-xs font-medium text-zinc-500 uppercase tracking-wide">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Personalize a cena
               </p>
               {loadingOpcoes ? (
@@ -100,7 +104,6 @@ export function GerarImagem() {
 
             {prompt && <PromptAuto prompt={prompt} />}
 
-            {/* Footer de ação */}
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-zinc-400">
@@ -112,17 +115,52 @@ export function GerarImagem() {
               </div>
 
               <button
+                type="button"
                 disabled={!podeLancar}
                 onClick={handleGerar}
                 className={clsx(
-                  'w-full rounded-xl py-3 text-sm font-semibold transition',
+                  'flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition',
                   podeLancar
                     ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-500 hover:to-purple-500'
                     : 'cursor-not-allowed bg-zinc-700 text-zinc-500',
                 )}
               >
-                {gerarImagem.isPending ? 'Gerando…' : 'Gerar imagem'}
+                {gerarImagem.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Gerando imagem...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Gerar imagem
+                  </>
+                )}
               </button>
+
+              {gerarImagem.isPending && (
+                <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-3">
+                  <p className="text-xs font-medium text-violet-200">
+                    A IA está trabalhando na sua imagem. Aguarde a conclusão...
+                  </p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-800">
+                    <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-violet-500 to-purple-500" />
+                  </div>
+                </div>
+              )}
+
+              {feedback && !gerarImagem.isPending && (
+                <div
+                  className={clsx(
+                    'rounded-xl border p-3 text-xs',
+                    feedback.kind === 'success' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
+                    feedback.kind === 'error' && 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+                    feedback.kind === 'processing' && 'border-violet-500/20 bg-violet-500/10 text-violet-200',
+                  )}
+                >
+                  {feedback.message}
+                </div>
+              )}
 
               {semCreditos && atrizSelecionada && (
                 <p className="text-center text-xs text-amber-400">
@@ -132,19 +170,15 @@ export function GerarImagem() {
                   </Link>
                 </p>
               )}
-
-              {gerarImagem.isError && (
-                <p className="text-center text-xs text-red-400">Erro ao gerar. Tente novamente.</p>
-              )}
             </div>
           </div>
 
-          {/* Painel de gerados */}
           <div className="flex-1">
             <PainelGerados
               items={gerados}
               isLoading={loadingGerados}
               onDenunciar={(id) => denunciarImagem.mutate(id)}
+              onOpenItem={abrirMidia}
               variant="grid"
             />
           </div>
@@ -159,6 +193,8 @@ export function GerarImagem() {
           onClose={() => setModalAberto(false)}
         />
       )}
+
+      <MidiaViewerModal item={midiaAtiva} onClose={fecharMidia} />
     </ClienteLayout>
   )
 }

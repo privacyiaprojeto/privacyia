@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
+import { createImageMediaGeneration, createVideoMediaGeneration } from './media.service.js'
 
 const IMAGE_COST = 30
 const VIDEO_COST = 80
@@ -99,7 +100,7 @@ async function debitCredits(profileId, amount, reason) {
 }
 
 async function getPlaceholderResultUrl(companionId, mediaKind) {
-  const mediaFilter = mediaKind === 'video' ? 'video' : 'image'
+  const mediaFilter = mediaKind === 'imagem' ? 'imagem' : mediaKind
 
   const { data: galleryItems, error: galleryError } = await supabaseAdmin
     .from('gallery_items')
@@ -313,11 +314,11 @@ export async function listVideoOptions() {
 }
 
 export async function createImageGeneration(profileId, input) {
-  return createGeneration(profileId, 'imagem', input)
+  return createImageMediaGeneration(profileId, input)
 }
 
 export async function createVideoGeneration(profileId, input) {
-  return createGeneration(profileId, 'video', input)
+  return createVideoMediaGeneration(profileId, input)
 }
 
 export async function listGeneratedImages(profileId) {

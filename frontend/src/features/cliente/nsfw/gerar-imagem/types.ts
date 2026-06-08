@@ -17,6 +17,10 @@ export interface GerarImagemInput {
 
 export interface GerarImagemResponse {
   id: string
+  mediaJobId?: string
   status: string
   progresso: number
+  eta?: number
+  url?: string
+  message?: string
 }

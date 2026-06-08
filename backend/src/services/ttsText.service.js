@@ -28,7 +28,7 @@ function removeRoleplayStageDirections(value) {
 function normalizePortugueseSpeech(value) {
   return toStringSafe(value)
     .replace(/\bdormir bem\b/giu, 'durma bem')
-    .replace(/\bboa noite,?\s*durma bem\b/giu, 'boa noite... durma bem')
+    .replace(/\bboa noite,?\s*durma bem\b/giu, 'boa noite, durma bem')
     .replace(/\bpra\b/giu, 'para')
     .replace(/\bpro\b/giu, 'para o')
     .replace(/\btô\b/giu, 'estou')
@@ -37,26 +37,12 @@ function normalizePortugueseSpeech(value) {
     .replace(/\bcê\b/giu, 'você')
 }
 
-function normalizePauses(value, profileKey = 'neutral') {
-  let text = toStringSafe(value)
-    .replace(/\.{4,}/g, '...')
-    .replace(/\s*\.\.\.\s*/g, '... ')
+function normalizePauses(value) {
+  return toStringSafe(value)
+    .replace(/[.…]{2,}/gu, ', ')
     .replace(/\s*([?!])\s*/g, '$1 ')
     .replace(/\s*([,;:])\s*/g, '$1 ')
     .replace(/\s*\.\s*/g, '. ')
-
-  const emotionalProfiles = new Set(['soft_night', 'caring', 'soft', 'whisper'])
-
-  if (emotionalProfiles.has(profileKey)) {
-    text = text
-      .replace(/\bBoa noite, meu amor\b/giu, 'Boa noite, meu amor...')
-      .replace(/\bEstou aqui, ouvindo\b/giu, 'Eu estou aqui... ouvindo')
-      .replace(/\bEstou aqui\b/giu, 'Eu estou aqui')
-      .replace(/\bEstou pertinho\b/giu, 'Estou pertinho')
-      .replace(/\bTe amo\b/giu, 'Te amo...')
-  }
-
-  return text
 }
 
 function collapseWhitespace(value) {
@@ -77,6 +63,31 @@ function splitLongSpeechSentences(value) {
     .join('\n')
 }
 
+/**
+ * Sanitizador final do prompt enviado ao RunPod TTS.
+ *
+ * Motivo: o Qwen3-TTS tende a criar pausas longas, ruídos e engasgos quando
+ * recebe reticências, emojis ou marcações de roleplay/ações no texto final.
+ */
+export function sanitizeTextForRunPodTts(value) {
+  return collapseWhitespace(
+    removeEmojis(value)
+      // Remove ações/descrições entre asteriscos, aspas e til.
+      .replace(/\*[^*\n]{0,120}\*/gu, ' ')
+      .replace(/"[^"\n]{0,120}"/gu, ' ')
+      .replace(/“[^”\n]{0,120}”/gu, ' ')
+      .replace(/'[^'\n]{0,120}'/gu, ' ')
+      .replace(/‘[^’\n]{0,120}’/gu, ' ')
+      .replace(/~[^~\n]{0,120}~/gu, ' ')
+      // Reticências e sequências de pontos viram pausa curta.
+      .replace(/[.…]{2,}/gu, ', ')
+      // Remove sobras de marcadores que podem chegar soltos.
+      .replace(/["“”'‘’*~]+/gu, ' ')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .replace(/([,.;:!?]){2,}/g, '$1')
+  )
+}
+
 export function normalizeTextForAudioLimit(value) {
   return collapseWhitespace(
     normalizePortugueseSpeech(
@@ -92,6 +103,7 @@ export function normalizeTextForAudioLimit(value) {
 export function prepareTextForTts(value, { profileKey = 'neutral' } = {}) {
   const cleaned = normalizeTextForAudioLimit(value)
   const withPauses = normalizePauses(cleaned, profileKey)
+  const splitText = splitLongSpeechSentences(withPauses)
 
-  return splitLongSpeechSentences(withPauses)
+  return sanitizeTextForRunPodTts(splitText)
 }

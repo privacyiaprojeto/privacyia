@@ -29,7 +29,8 @@ export async function listImageOptionsController(_req, res) {
 export async function createImageGenerationController(req, res) {
   const input = parseOrThrow(gerarImagemSchema, req.body)
   const data = await createImageGeneration(req.auth.profile.id, input)
-  return res.status(201).json(data)
+  const statusCode = data?.status === 'em_andamento' ? 202 : 201
+  return res.status(statusCode).json(data)
 }
 
 export async function listGeneratedImagesController(req, res) {
