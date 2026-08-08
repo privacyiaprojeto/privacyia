@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "privacy-vace-identity-lora-training-config-v1",
+  "mode": "readiness_dry_run",
+  "baseModel": "Wan-AI/Wan2.1-VACE-14B",
+  "resolution": "480x832",
+  "numFrames": 17,
+  "precision": "bf16",
+  "loraBaseModel": "vace",
+  "rank": 32,
+  "alpha": 32,
+  "learningRate": 0.00005,
+  "targetModules": ["q", "k", "v", "o", "ffn.0", "ffn.2"],
+  "trainTextEncoder": false,
+  "trainVae": false,
+  "gradientCheckpointingOffload": true,
+  "checkpointSteps": [400, 600, 800, 900],
+  "maximumOptimizerSteps": 900,
+  "automaticRetry": false,
+  "runPodSubmission": false
+}

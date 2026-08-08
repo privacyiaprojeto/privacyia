@@ -15,28 +15,30 @@ export function Feed() {
 
   return (
     <ClienteLayout>
-      <div className="mx-auto max-w-5xl px-4 py-4">
-        <div className="lg:grid lg:grid-cols-[1fr_260px] lg:gap-8">
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8">
 
-          {/* Coluna do feed */}
-          <div className="mx-auto flex w-full max-w-[560px] flex-col gap-6 lg:mx-0">
+          <div className="mx-auto flex w-full max-w-[620px] flex-col gap-6 lg:mx-0">
 
             {loadingPosts && (
-              <div className="flex justify-center py-16 text-sm text-zinc-500">
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950/50 p-8 text-center text-sm text-zinc-500">
                 Carregando feed…
               </div>
             )}
 
             {isError && (
-              <div className="flex flex-col items-center gap-2 py-16 text-sm text-red-400">
-                <span>Erro ao carregar feed</span>
-                <span className="text-xs text-zinc-500">{parseApiError(error)}</span>
+              <div className="rounded-3xl border border-red-500/20 bg-red-500/10 p-8 text-center text-sm text-red-300">
+                <p className="font-semibold">Erro ao carregar feed</p>
+                <p className="mt-2 text-xs text-red-200/70">{parseApiError(error)}</p>
               </div>
             )}
 
             {!loadingPosts && !isError && posts.length === 0 && (
-              <div className="flex justify-center py-16 text-sm text-zinc-500">
-                Nenhum post encontrado.
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950/50 p-8 text-center">
+                <p className="text-sm font-semibold text-zinc-300">Nenhum post encontrado.</p>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                  Enquanto novos conteúdos não são publicados no feed, explore as sugestões ao lado ou acesse Gerar NSFW.
+                </p>
               </div>
             )}
 
@@ -44,8 +46,8 @@ export function Feed() {
               <div key={post.id} className="flex flex-col gap-6">
                 <PostCard post={post} />
 
-                {sugestoes.length > 0 && (
-                  <CarouselEntrePostsBlock atrizes={sugestoes} />
+                {i === 0 && sugestoes.length > 0 && (
+                  <CarouselEntrePostsBlock atrizes={sugestoes.slice(0, 8)} />
                 )}
 
                 {i === 1 && top10.length > 0 && (
@@ -55,9 +57,8 @@ export function Feed() {
             ))}
           </div>
 
-          {/* Coluna de sugestões — só desktop */}
           {sugestoes.length > 0 && (
-            <aside className="hidden lg:block">
+            <aside className="mt-6 hidden lg:mt-0 lg:block">
               <SugestoesColuna atrizes={sugestoes} />
             </aside>
           )}

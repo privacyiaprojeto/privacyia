@@ -21,8 +21,11 @@ export async function listSubscribedActressesController(req, res) {
   return res.status(200).json(data)
 }
 
-export async function listImageOptionsController(_req, res) {
-  const data = await listImageOptions()
+export async function listImageOptionsController(req, res) {
+  const data = await listImageOptions({
+    profileId: req.auth.profile.id,
+    companionId: req.query.atrizId || req.query.companionId || null,
+  })
   return res.status(200).json(data)
 }
 
@@ -44,15 +47,19 @@ export async function reportImageGenerationController(req, res) {
   return res.status(200).json(data)
 }
 
-export async function listVideoOptionsController(_req, res) {
-  const data = await listVideoOptions()
+export async function listVideoOptionsController(req, res) {
+  const data = await listVideoOptions({
+    profileId: req.auth.profile.id,
+    companionId: req.query.atrizId || req.query.companionId || null,
+  })
   return res.status(200).json(data)
 }
 
 export async function createVideoGenerationController(req, res) {
   const input = parseOrThrow(gerarVideoSchema, req.body)
   const data = await createVideoGeneration(req.auth.profile.id, input)
-  return res.status(201).json(data)
+  const statusCode = data?.status === 'em_andamento' ? 202 : 201
+  return res.status(statusCode).json(data)
 }
 
 export async function listGeneratedVideosController(req, res) {

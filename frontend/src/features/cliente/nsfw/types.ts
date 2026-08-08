@@ -5,6 +5,8 @@ export interface AtrizAssinada {
   avatarUrl?: string
 }
 
+import type { MediaAvailabilityStatus, MediaStreamKind } from '@/features/cliente/media/api/protectedPlaybackApi'
+
 export type StatusGeracao = 'em_andamento' | 'concluido' | 'erro'
 
 export interface ItemGerado {
@@ -13,6 +15,9 @@ export interface ItemGerado {
   atrizNome: string
   tipo: 'imagem' | 'video' | 'audio' | 'foto' | 'live_audio' | 'live_action' | string
   url?: string
+  mediaStatus?: MediaAvailabilityStatus
+  streamKind?: MediaStreamKind
+  mediaMessage?: string | null
   status: StatusGeracao
   progresso: number
   eta?: number

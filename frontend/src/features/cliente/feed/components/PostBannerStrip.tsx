@@ -1,11 +1,34 @@
 import { Link } from 'react-router'
-import type { AtrizPerfil } from '@/shared/types/atriz'
+import type { Post } from '@/features/cliente/feed/types'
 
 interface PostBannerStripProps {
-  atriz: AtrizPerfil
+  post: Post
 }
 
-export function PostBannerStrip({ atriz }: PostBannerStripProps) {
+function productLabel(post: Post) {
+  const product = post.produto
+  if (!product) return post.atriz.nome
+
+  const mediaLabels: Record<string, string> = {
+    image: 'Imagem',
+    video: 'Vídeo',
+    short_video: 'Vídeo curto',
+    live_action: 'Live Action',
+    audio: 'Áudio',
+    live_audio: 'Áudio Live',
+    audio_live: 'Áudio Live',
+  }
+  const media = mediaLabels[product.tipo] || 'Conteúdo'
+  const price = Number(product.precoCreditos || 0)
+
+  return price > 0
+    ? `${product.nome} • ${media} • ${price} créditos`
+    : `${product.nome} • ${media}`
+}
+
+export function PostBannerStrip({ post }: PostBannerStripProps) {
+  const { atriz } = post
+
   return (
     <Link
       to={`/cliente/atriz/${atriz.slug}`}
@@ -21,7 +44,7 @@ export function PostBannerStrip({ atriz }: PostBannerStripProps) {
       {/* Gradiente */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
 
-      {/* Avatar + nome — centralizados na altura, ancorados à esquerda */}
+      {/* Avatar + produto — centralizados na altura, ancorados à esquerda */}
       <div className="absolute inset-y-0 left-3 right-3 flex items-center gap-2">
         <img
           src={atriz.avatar}
@@ -29,7 +52,7 @@ export function PostBannerStrip({ atriz }: PostBannerStripProps) {
           className="h-16 w-16 shrink-0 rounded-full border-2 border-white/40 object-cover"
         />
         <span className="truncate rounded-md bg-black/40 px-1.5 py-0.5 text-sm font-bold text-white backdrop-blur-sm">
-          {atriz.nome}
+          {productLabel(post)}
         </span>
       </div>
     </Link>

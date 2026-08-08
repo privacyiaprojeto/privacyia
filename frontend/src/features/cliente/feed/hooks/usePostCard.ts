@@ -15,12 +15,12 @@ export function usePostCard(post: Post) {
     const novo = !curtido
     setCurtido(novo)
     setCurtidas((n) => n + (novo ? 1 : -1))
-    curtirMutation.mutate(post.id)
+    if (!post.readOnly) curtirMutation.mutate(post.id)
   }
 
   function handleSalvar() {
     setSalvo((v) => !v)
-    salvarMutation.mutate(post.id)
+    if (!post.readOnly) salvarMutation.mutate(post.id)
   }
 
   return { curtido, curtidas, salvo, handleCurtir, handleSalvar }

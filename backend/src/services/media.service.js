@@ -1,14 +1,21 @@
+import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from '../config/supabase.js'
 import { env } from '../config/env.js'
 import { ApiError } from '../utils/apiError.js'
 import { debitCreditsAtomically, refundCredits } from './wallet.service.js'
-import { getExtensionFromContentType, uploadImageBuffer, uploadVideoBuffer } from './storage.service.js'
-import { generateImageWithRunPod, generateVideoWithRunPod } from './providers/runpod.provider.js'
+import { addImageRealJob } from '../queues/image.queue.js'
+import { assertAvatarCompliantForProduction } from './actor-compliance.service.js'
+import { createSceneDirection } from './scene-direction.service.js'
+import { markClientGenerationFailed, markClientGenerationQueued } from './media-generation-tracking.service.js'
+import { assertApprovedActorIdentityForProduction } from './actor-identity-lora.service.js'
 
 const IMAGE_MEDIA_KIND = 'imagem'
 const VIDEO_MEDIA_KIND = 'video'
 const PROCESSING_JOB_STATUS = 'processing'
 const DEFAULT_VIDEO_CREDITS_COST = 80
+const GUIDED_TITLES_TABLE = 'prompt_dimensions'
+const GUIDED_ITEMS_TABLE = 'prompt_options'
+
 
 function getImageJobKind() {
   return env.MEDIA_IMAGE_JOB_KIND || 'image'
@@ -94,81 +101,200 @@ async function getCompanion(companionId) {
   return data
 }
 
-async function getSelectedOptions(input) {
-  const optionPairs = mapOptionInput(input)
 
-  if (optionPairs.length === 0) {
+function normalizeGuidedSelections(input = {}) {
+  const selections = input.guidedSelections || input.selecoesGuiadas || input.dynamicSelections || []
+
+  if (Array.isArray(selections)) {
+    return selections
+      .map((item) => ({
+        titleId: item?.titleId || null,
+        category: item?.category || item?.categoria || item?.titleId || null,
+        itemId: item?.itemId || item?.id || null,
+      }))
+      .filter((item) => item.itemId)
+  }
+
+  if (selections && typeof selections === 'object') {
+    return Object.entries(selections)
+      .filter(([, itemId]) => Boolean(itemId))
+      .map(([category, itemId]) => ({
+        titleId: category,
+        category,
+        itemId,
+      }))
+  }
+
+  return []
+}
+
+function supportsGuidedContentType(row, contentType) {
+  const contentTypes = row?.content_types || row?.metadata?.contentTypes || []
+  return !Array.isArray(contentTypes) || contentTypes.length === 0 || contentTypes.includes(contentType)
+}
+
+function guidedContentTypeForMediaKind(mediaKind) {
+  return mediaKind === VIDEO_MEDIA_KIND ? 'video' : 'image'
+}
+
+async function getSelectedGuidedOptions(input = {}, mediaKind = IMAGE_MEDIA_KIND) {
+  const selections = normalizeGuidedSelections(input)
+
+  if (selections.length === 0) {
     return {}
   }
 
-  const optionIds = optionPairs.map((item) => item.id)
+  const itemIds = [...new Set(selections.map((item) => item.itemId).filter(Boolean))]
 
-  const { data, error } = await supabaseAdmin
-    .from('nsfw_options')
-    .select('id, media_kind, category, label')
-    .in('id', optionIds)
-    .eq('is_active', true)
-
-  if (error) {
-    throw new ApiError(500, 'Erro ao carregar opções da geração.', error)
+  if (itemIds.length === 0) {
+    return {}
   }
 
-  const byId = new Map((data || []).map((item) => [item.id, item]))
+  const { data: items, error: itemsError } = await supabaseAdmin
+    .from(GUIDED_ITEMS_TABLE)
+    .select('*')
+    .in('id', itemIds)
+    .eq('is_active', true)
+
+  if (itemsError) {
+    throw new ApiError(500, 'Erro ao carregar opções guiadas da geração.', itemsError)
+  }
+
+  const contentType = guidedContentTypeForMediaKind(mediaKind)
+  const filteredItems = (items || [])
+    .filter((item) => item.visible_to_client !== false && item.admin_only !== true)
+    .filter((item) => supportsGuidedContentType(item, contentType))
+
+  if (filteredItems.length === 0) return {}
+
+  const titleIds = [...new Set(filteredItems.map((item) => item.dimension_id).filter(Boolean))]
+
+  const { data: titles, error: titlesError } = await supabaseAdmin
+    .from(GUIDED_TITLES_TABLE)
+    .select('*')
+    .in('id', titleIds)
+    .eq('is_active', true)
+
+  if (titlesError) {
+    throw new ApiError(500, 'Erro ao carregar títulos guiados da geração.', titlesError)
+  }
+
+  const titleById = new Map(
+    (titles || [])
+      .filter((title) => title.visible_to_client !== false && title.admin_only !== true)
+      .filter((title) => supportsGuidedContentType(title, contentType))
+      .map((title) => [title.id, title]),
+  )
+
+  const itemById = new Map(filteredItems.map((item) => [item.id, item]))
   const result = {}
 
-  for (const pair of optionPairs) {
-    const option = byId.get(pair.id)
-    if (!option) continue
+  for (const selection of selections) {
+    const item = itemById.get(selection.itemId)
+    if (!item) continue
 
-    result[pair.field] = {
-      id: option.id,
-      mediaKind: option.media_kind,
-      category: option.category,
-      label: option.label,
+    const title = titleById.get(item.dimension_id)
+    if (!title) continue
+
+    const titleName = title.display_name || title.name || title.label || 'Opção'
+    const itemName = item.display_name || item.name || item.label || 'Item'
+    const key = `guided:${title.id}`
+
+    result[key] = {
+      id: item.id,
+      mediaKind,
+      category: titleName,
+      titleId: title.id,
+      titleName,
+      label: itemName,
+      technicalSnippet: item.technical_snippet || itemName,
+      negativePrompt: item.negative_prompt || '',
+      isGuided: true,
     }
   }
 
   return result
 }
 
-
-async function getSelectedVideoOptions(input) {
-  const optionPairs = mapVideoOptionInput(input)
-
-  if (optionPairs.length === 0) {
-    return {}
-  }
-
-  const optionIds = optionPairs.map((item) => item.id)
-
-  const { data, error } = await supabaseAdmin
-    .from('nsfw_options')
-    .select('id, media_kind, category, label, image_url, video_url')
-    .in('id', optionIds)
-    .eq('is_active', true)
-
-  if (error) {
-    throw new ApiError(500, 'Erro ao carregar opções de vídeo.', error)
-  }
-
-  const byId = new Map((data || []).map((item) => [item.id, item]))
+async function getSelectedOptions(input) {
+  const optionPairs = mapOptionInput(input)
   const result = {}
 
-  for (const pair of optionPairs) {
-    const option = byId.get(pair.id)
-    if (!option) continue
+  if (optionPairs.length > 0) {
+    const optionIds = optionPairs.map((item) => item.id)
 
-    result[pair.field] = {
-      id: option.id,
-      mediaKind: option.media_kind,
-      category: option.category,
-      label: option.label,
-      imageUrl: option.image_url || null,
-      videoUrl: option.video_url || null,
+    const { data, error } = await supabaseAdmin
+      .from('nsfw_options')
+      .select('id, media_kind, category, label')
+      .in('id', optionIds)
+      .eq('is_active', true)
+
+    if (error) {
+      throw new ApiError(500, 'Erro ao carregar opções da geração.', error)
+    }
+
+    const byId = new Map((data || []).map((item) => [item.id, item]))
+
+    for (const pair of optionPairs) {
+      const option = byId.get(pair.id)
+      if (!option) continue
+
+      result[pair.field] = {
+        id: option.id,
+        mediaKind: option.media_kind,
+        category: option.category,
+        label: option.label,
+        isGuided: false,
+      }
     }
   }
 
-  return result
+  return {
+    ...result,
+    ...(await getSelectedGuidedOptions(input, IMAGE_MEDIA_KIND)),
+  }
+}
+
+
+async function getSelectedVideoOptions(input) {
+  const optionPairs = mapVideoOptionInput(input)
+  const result = {}
+
+  if (optionPairs.length > 0) {
+    const optionIds = optionPairs.map((item) => item.id)
+
+    const { data, error } = await supabaseAdmin
+      .from('nsfw_options')
+      .select('id, media_kind, category, label, image_url, video_url')
+      .in('id', optionIds)
+      .eq('is_active', true)
+
+    if (error) {
+      throw new ApiError(500, 'Erro ao carregar opções de vídeo.', error)
+    }
+
+    const byId = new Map((data || []).map((item) => [item.id, item]))
+
+    for (const pair of optionPairs) {
+      const option = byId.get(pair.id)
+      if (!option) continue
+
+      result[pair.field] = {
+        id: option.id,
+        mediaKind: option.media_kind,
+        category: option.category,
+        label: option.label,
+        imageUrl: option.image_url || null,
+        videoUrl: option.video_url || null,
+        isGuided: false,
+      }
+    }
+  }
+
+  return {
+    ...result,
+    ...(await getSelectedGuidedOptions(input, VIDEO_MEDIA_KIND)),
+  }
 }
 
 async function assertNoProcessingMediaJob(profileId) {
@@ -258,7 +384,7 @@ async function createMediaGeneration({ profileId, companionId, mediaJob, promptP
         ...promptPayload,
         mediaJobId: mediaJob.id,
       },
-      external_provider: 'runpod',
+      external_provider: 'bullmq',
       external_job_id: mediaJob.id,
     })
     .select('id, status, progress')
@@ -342,6 +468,17 @@ function getOptionLabel(options = {}, key) {
   return normalizePromptText(options?.[key]?.label)
 }
 
+function getGuidedOptionSegments(options = {}) {
+  return Object.values(options)
+    .filter((option) => option?.isGuided)
+    .map((option) => {
+      const title = normalizePromptText(option?.titleName || option?.category)
+      const snippet = normalizePromptText(option?.technicalSnippet || option?.label)
+      return title && snippet ? `${title}: ${snippet}` : snippet
+    })
+    .filter(Boolean)
+}
+
 function buildCompanionBaseDescriptor(companion = {}) {
   return joinPromptSegments([
     companion?.name || 'adult female subject',
@@ -357,6 +494,7 @@ function buildImagePromptPayload({ companion, options = {}, creditsCost }) {
   const environment = getOptionLabel(options, 'ambienteId')
   const accessory = getOptionLabel(options, 'acessorioId')
   const outfit = getOptionLabel(options, 'roupaId')
+  const guidedSegments = getGuidedOptionSegments(options)
 
   const prompt = joinPromptSegments([
     'photorealistic editorial portrait',
@@ -367,6 +505,7 @@ function buildImagePromptPayload({ companion, options = {}, creditsCost }) {
     environment ? `scene/background: ${environment}` : 'scene/background: premium indoor editorial setting',
     outfit ? `wardrobe: ${outfit}` : 'wardrobe: tasteful modern outfit',
     accessory ? `accessory: ${accessory}` : null,
+    ...guidedSegments,
     IMAGE_QUALITY_BOOSTERS,
   ])
 
@@ -398,45 +537,30 @@ function buildImagePromptPayload({ companion, options = {}, creditsCost }) {
 }
 
 
-function getFirstVideoUrlFromOptions(options = {}) {
-  return Object.values(options)
-    .map((option) => normalizePromptText(option?.videoUrl || option?.video_url))
-    .find(Boolean) || ''
-}
-
 function buildVideoPromptPayload({ companion, input = {}, options = {}, creditsCost }) {
-  const baseVideoUrl = normalizePromptText(
-    input.baseVideoUrl ||
-      input.videoBaseUrl ||
-      input.targetVideoUrl ||
-      getFirstVideoUrlFromOptions(options) ||
-      env.FACESWAP_BASE_VIDEO_URL ||
-      '',
-  )
-
-  const sourceImageUrl = normalizePromptText(
-    input.sourceImageUrl ||
-      input.referenceImageUrl ||
-      companion?.avatar_url ||
-      companion?.thumbnail_url ||
-      companion?.banner_url ||
-      '',
-  )
+  const guidedSegments = getGuidedOptionSegments(options)
+  const prompt = joinPromptSegments([
+    `cinematic video featuring ${companion?.name || companion?.slug || 'the authorized adult model'}`,
+    ...guidedSegments,
+    normalizePromptText(input.notes || input.prompt || ''),
+    'preserve authorized identity',
+    'private master output',
+    'quality review required',
+  ])
 
   return {
     mediaKind: VIDEO_MEDIA_KIND,
     companionId: companion?.id,
     selectedOptions: options,
-    pricing: {
-      mediaKind: VIDEO_MEDIA_KIND,
-      creditsCost,
-    },
-    baseVideoUrl,
-    targetVideoUrl: baseVideoUrl,
-    sourceImageUrl,
-    referenceImageUrl: sourceImageUrl,
+    guidedSelections: Object.values(options).filter((item) => item?.isGuided),
+    prompt,
+    prompt_text: prompt,
+    negative_prompt: 'low quality, blurry, distorted identity, duplicate subject, watermark, text, logo',
+    pricing: { mediaKind: VIDEO_MEDIA_KIND, creditsCost },
+    productionMode: String(input.productionMode || input.production_mode || (input.baseSceneId ? 'v2v' : 'i2v')).toLowerCase() === 'v2v' ? 'v2v' : 'i2v',
+    baseSceneId: input.baseSceneId || input.base_scene_id || null,
     provider: 'runpod',
-    engine: 'faceswap_zero_shot',
+    engine: input.baseSceneId ? 'wan-2.1-v2v' : 'wan-2.1-i2v',
     requestedAt: new Date().toISOString(),
   }
 }
@@ -456,7 +580,7 @@ async function createVideoMediaGenerationRecord({ profileId, companionId, mediaJ
         ...promptPayload,
         mediaJobId: mediaJob.id,
       },
-      external_provider: 'runpod',
+      external_provider: 'bullmq',
       external_job_id: mediaJob.id,
     })
     .select('id, status, progress')
@@ -522,341 +646,232 @@ async function markMediaFailed({ mediaJobId, generationId, errorMessage }) {
   ])
 }
 
-async function insertGalleryItem({ profileId, companionId, mediaUrl, mediaType = IMAGE_MEDIA_KIND }) {
-  const { error } = await supabaseAdmin
-    .from('gallery_items')
-    .insert({
-      profile_id: profileId,
-      companion_id: companionId,
-      media_type: mediaType,
-      media_url: mediaUrl,
-      saved_from_feed: false,
-    })
-
-  if (error) {
-    throw new ApiError(500, 'Erro ao inserir mídia na galeria.', error)
-  }
+function queueEnabledForImage() {
+  return Boolean(env.WORKERS_ENABLED && env.ACTOR_PIPELINE_QUEUE_ENABLED)
 }
 
-async function markCompletedRecords({ mediaJobId, generationId, resultUrl, runpodJobId }) {
-  const now = new Date().toISOString()
+function queueEnabledForVideo() {
+  return Boolean(env.WORKERS_ENABLED && env.SCENE_DIRECTION_QUEUE_ENABLED)
+}
 
-  const [{ error: jobError }, { error: generationError }] = await Promise.all([
-    supabaseAdmin
-      .from('media_jobs')
-      .update({
-        status: 'completed',
-        output_media_url: resultUrl,
-        runpod_job_id: runpodJobId || null,
-        updated_at: now,
-      })
-      .eq('id', mediaJobId),
-    supabaseAdmin
-      .from('media_generations')
-      .update({
-        status: 'concluido',
-        progress: 100,
-        eta_seconds: 0,
-        result_url: resultUrl,
-        external_provider: 'runpod',
-        external_job_id: runpodJobId || mediaJobId,
-        updated_at: now,
-      })
-      .eq('id', generationId),
-  ])
+function isMissingColumnError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return String(error?.code || '') === '42703' || message.includes('does not exist') || message.includes('column')
+}
 
-  if (jobError || generationError) {
-    throw new ApiError(500, 'Erro ao marcar mídia como concluída.', { jobError, generationError })
+async function insertAdaptive(table, input, label, { requiredColumns = [] } = {}) {
+  let payload = { ...input }
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const { data, error } = await supabaseAdmin.from(table).insert(payload).select('*').maybeSingle()
+    if (!error) return data
+    if (!isMissingColumnError(error)) throw new ApiError(500, `Erro ao criar ${label}.`, error)
+    const match = String(error.message || '').match(/column\s+["']?([a-zA-Z0-9_]+)["']?/i)
+      || String(error.message || '').match(/["']([a-zA-Z0-9_]+)["']\s+does not exist/i)
+    const column = match?.[1]
+    if (!column || !(column in payload)) throw new ApiError(500, `Schema incompatível ao criar ${label}.`, error)
+    if (requiredColumns.includes(column)) {
+      throw new ApiError(500, `Schema incompatível: coluna obrigatória ${column} ausente ao criar ${label}.`, error)
+    }
+    delete payload[column]
   }
+  throw new ApiError(500, `Falha ao adaptar ${label}.`)
+}
+
+async function resolveCanonicalActorContext(companionId, contentType) {
+  const { data: authorizations, error } = await supabaseAdmin
+    .from('avatar_production_authorizations')
+    .select('*')
+    .eq('companion_id', companionId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  if (error) throw new ApiError(500, 'Erro ao carregar autorização canônica da atriz.', error)
+  const now = Date.now()
+  const authorization = (authorizations || []).find((row) => {
+    if (!row.actor_profile_id) return false
+    if (row.starts_at && new Date(row.starts_at).getTime() > now) return false
+    if (row.ends_at && new Date(row.ends_at).getTime() <= now) return false
+    const types = Array.isArray(row.authorized_for_content_types) ? row.authorized_for_content_types : []
+    return types.length === 0 || types.includes(contentType) || (contentType === 'video' && types.some((type) => ['short_video', 'live_action'].includes(String(type))))
+  })
+
+  if (!authorization) throw new ApiError(409, 'A atriz não possui autorização ativa para esta produção.')
+  await assertAvatarCompliantForProduction({ companionId, contentType })
+  return { actorProfileId: authorization.actor_profile_id, authorizationId: authorization.id }
+}
+
+async function createCanonicalImageBatch({ profileId, companion, context, promptPayload, mediaJob, generation }) {
+  const now = new Date().toISOString()
+  const combinationId = randomUUID()
+  const batchId = randomUUID()
+  const itemId = randomUUID()
+  const title = `Pedido de imagem • ${companion.name || companion.slug || companion.id} • ${String(generation.id).slice(0, 8)}`
+
+  await insertAdaptive('media_combinations', {
+    id: combinationId,
+    companion_id: companion.id,
+    actor_profile_id: context.actorProfileId,
+    avatar_production_authorization_id: context.authorizationId,
+    media_origin: 'client_canonical_queue',
+    media_type: 'image',
+    content_type: 'image',
+    combination_key: `client:image:${generation.id}`,
+    title, name: title, label: title,
+    status: 'active', is_active: true, active: true,
+    visible_to_client: false, admin_only: true, price_credits: 0,
+    prompt: promptPayload.prompt,
+    prompt_final: promptPayload.prompt,
+    negative_prompt: promptPayload.negative_prompt,
+    guided_selections: promptPayload.guidedSelections || [],
+    metadata: { source: 'client_canonical_queue', profileId, mediaJobId: mediaJob.id, generationId: generation.id, qaRequired: true, publicUrl: false },
+    created_at: now, updated_at: now,
+  }, 'combinação canônica do Cliente', { requiredColumns: ['id', 'companion_id', 'actor_profile_id'] })
+
+  await insertAdaptive('media_generation_batches', {
+    id: batchId,
+    companion_id: companion.id,
+    profile_id: profileId,
+    actor_profile_id: context.actorProfileId,
+    avatar_production_authorization_id: context.authorizationId,
+    media_origin: 'client_canonical_queue',
+    name: title, title, label: title,
+    status: 'queued', source: 'client_canonical_queue', job_origin: 'client_nsfw_adapter',
+    media_type: 'image', content_type: 'image',
+    total_items: 1, total_count: 1, queued_items: 1, requested_variants: 1,
+    metadata: { source: 'client_canonical_queue', combinationId, profileId, mediaJobId: mediaJob.id, generationId: generation.id },
+    created_at: now, updated_at: now,
+  }, 'lote canônico do Cliente', { requiredColumns: ['id', 'companion_id', 'actor_profile_id'] })
+
+  await insertAdaptive('media_generation_batch_items', {
+    id: itemId,
+    batch_id: batchId,
+    companion_id: companion.id,
+    profile_id: profileId,
+    actor_profile_id: context.actorProfileId,
+    avatar_production_authorization_id: context.authorizationId,
+    media_origin: 'client_canonical_queue',
+    combination_id: combinationId,
+    media_combination_id: combinationId,
+    status: 'queued', source: 'client_canonical_queue', job_origin: 'client_nsfw_adapter',
+    media_type: 'image', content_type: 'image', requested_variants: 1, variant_number: 1, item_index: 0,
+    idempotency_key: `client-canonical:${generation.id}`,
+    prompt: promptPayload.prompt, prompt_text: promptPayload.prompt, prompt_final: promptPayload.prompt,
+    negative_prompt: promptPayload.negative_prompt,
+    generation_payload: { ...promptPayload, source: 'client_canonical_queue', factoryMode: 'real_image', profileId, mediaJobId: mediaJob.id, generationId: generation.id },
+    generation_params: promptPayload.generationConfig,
+    metadata: { source: 'client_canonical_queue', profileId, mediaJobId: mediaJob.id, generationId: generation.id, qaRequired: true },
+    created_at: now, updated_at: now,
+  }, 'item canônico do Cliente', { requiredColumns: ['id', 'batch_id', 'companion_id', 'actor_profile_id', 'combination_id'] })
+
+  const job = await addImageRealJob({
+    batchItemId: itemId,
+    batchId,
+    combinationId,
+    requestedVariants: 1,
+    nextStatus: 'qa_pending',
+    metadata: { source: 'client_canonical_queue', profileId, mediaJobId: mediaJob.id, generationId: generation.id },
+    jobPayload: {
+      companionId: companion.id,
+      actorProfileId: context.actorProfileId,
+      productionAuthorizationId: context.authorizationId,
+      profileId,
+      mediaJobId: mediaJob.id,
+      generationId: generation.id,
+      factoryMode: 'real_image',
+      generateRealImage: true,
+      createDelivery: false,
+      createGalleryItem: false,
+    },
+  })
+
+  return { queueJobId: String(job.id), batchId, itemId, combinationId }
 }
 
 export async function createImageMediaGeneration(profileId, input) {
-  if (!env.RUNPOD_IMAGE_ENDPOINT_ID) {
-    throw new ApiError(503, 'RunPod de imagem ainda não configurado. Defina RUNPOD_IMAGE_ENDPOINT_ID para ativar a Fábrica Visual.')
-  }
+  if (!queueEnabledForImage()) throw new ApiError(503, 'Produção canônica indisponível: mantenha a solicitação bloqueada até os workers de imagem serem habilitados.')
+  if (!env.RUNPOD_IMAGE_ENDPOINT_ID) throw new ApiError(503, 'RunPod de imagem ainda não configurado.')
 
   const companionId = input.atrizId
-
-  if (!companionId) {
-    throw new ApiError(400, 'atrizId obrigatório para geração de imagem.')
-  }
-
-  let mediaJob = null
-  let generation = null
-  let debited = false
-  let creditsCost = 0
-
   await assertNoProcessingMediaJob(profileId)
   await requireActiveSubscription(profileId, companionId)
-
   const companion = await getCompanion(companionId)
+  const context = await resolveCanonicalActorContext(companionId, 'image')
+  await assertApprovedActorIdentityForProduction({
+    actorProfileId: context.actorProfileId,
+    companionId,
+    authorizationId: context.authorizationId,
+    contentType: 'image',
+  })
   const options = await getSelectedOptions(input)
   const pricing = await getMediaPricingRule(IMAGE_MEDIA_KIND)
-  creditsCost = pricing.creditsCost
+  const promptPayload = buildImagePromptPayload({ companion, options, creditsCost: pricing.creditsCost })
+  promptPayload.guidedSelections = Object.values(options).filter((item) => item?.isGuided)
+  promptPayload.actorProfileId = context.actorProfileId
+  promptPayload.authorizationId = context.authorizationId
 
-  const promptPayload = buildImagePromptPayload({
-    companion,
-    options,
-    creditsCost,
-  })
-
-  mediaJob = await createMediaJob({
-    profileId,
-    companionId,
-    kind: getImageJobKind(),
-    promptPayload,
-    creditsCost,
-  })
-
+  let mediaJob
+  let generation
+  let debited = false
   try {
-    await debitCreditsAtomically(profileId, creditsCost, 'Geração de imagem', {
-      referenceType: 'media_job',
-      referenceId: mediaJob.id,
-    })
+    mediaJob = await createMediaJob({ profileId, companionId, kind: getImageJobKind(), promptPayload, creditsCost: pricing.creditsCost })
+    await debitCreditsAtomically(profileId, pricing.creditsCost, 'Geração de imagem', { referenceType: 'media_job', referenceId: mediaJob.id })
     debited = true
-
-    generation = await createMediaGeneration({
-      profileId,
-      companionId,
-      mediaJob,
-      promptPayload,
-      creditsCost,
-    })
-
-    const generatedImage = await generateImageWithRunPod({
-      companion,
-      options,
-      promptPayload: {
-        ...promptPayload,
-        mediaJobId: mediaJob.id,
-        generationId: generation.id,
-      },
-    })
-
-    const extension = generatedImage.extension || getExtensionFromContentType(generatedImage.mimeType || 'image/png')
-    const imageKey = `images/generated/${profileId}/${generation.id}.${extension}`
-    const resultUrl = await uploadImageBuffer({
-      buffer: generatedImage.buffer,
-      key: imageKey,
-      contentType: generatedImage.mimeType || 'image/png',
-    })
-
-    await insertGalleryItem({
-      profileId,
-      companionId,
-      mediaUrl: resultUrl,
-    })
-
-    await markCompletedRecords({
-      mediaJobId: mediaJob.id,
-      generationId: generation.id,
-      resultUrl,
-      runpodJobId: generatedImage.runpodJobId,
-    })
-
-    console.log(`[Media Pipeline] imagem concluída | mediaJob=${mediaJob.id} | generation=${generation.id} | credits=${creditsCost}`)
-
-    return {
-      id: generation.id,
-      mediaJobId: mediaJob.id,
-      status: 'concluido',
-      progresso: 100,
-      url: resultUrl,
-    }
+    generation = await createMediaGeneration({ profileId, companionId, mediaJob, promptPayload, creditsCost: pricing.creditsCost })
+    const canonical = await createCanonicalImageBatch({ profileId, companion, context, promptPayload, mediaJob, generation })
+    await markClientGenerationQueued({ mediaJobId: mediaJob.id, generationId: generation.id, queueJobId: canonical.queueJobId, canonical: { ...promptPayload, ...canonical, privateStorage: true, qaRequired: true } })
+    return { id: generation.id, mediaJobId: mediaJob.id, status: 'em_andamento', progresso: 10, accepted: true, canonicalQueue: 'media:image', ...canonical, message: 'Pedido aceito pela fila canônica. A mídia ficará em QA antes de qualquer entrega.' }
   } catch (error) {
-    await markMediaFailed({
-      mediaJobId: mediaJob?.id,
-      generationId: generation?.id,
-      errorMessage: error?.message,
-    })
-
-    if (debited) {
-      await refundCredits(profileId, creditsCost, 'Estorno por falha na geração de imagem', {
-        referenceType: 'media_job',
-        referenceId: mediaJob?.id,
-      }).catch((refundError) => {
-        console.error('[Media Pipeline] falha ao estornar créditos após erro de imagem:', refundError)
-      })
-    }
-
+    await markClientGenerationFailed({ mediaJobId: mediaJob?.id, generationId: generation?.id, message: error?.message })
+    if (debited) await refundCredits(profileId, pricing.creditsCost, 'Estorno por falha ao enfileirar imagem', { referenceType: 'media_job', referenceId: mediaJob?.id }).catch(() => {})
     throw error
-  }
-}
-
-
-async function processVideoGenerationInBackground({
-  profileId,
-  companion,
-  mediaJob,
-  generation,
-  promptPayload,
-  creditsCost,
-}) {
-  try {
-    console.log(`[Media Pipeline] processamento assíncrono de vídeo iniciado | mediaJob=${mediaJob.id} | generation=${generation.id}`)
-
-    const generatedVideo = await generateVideoWithRunPod({
-      companion,
-      baseVideoUrl: promptPayload.baseVideoUrl,
-      promptPayload: {
-        ...promptPayload,
-        mediaJobId: mediaJob.id,
-        generationId: generation.id,
-      },
-    })
-
-    const extension =
-      generatedVideo.extension ||
-      getExtensionFromContentType(generatedVideo.mimeType || 'video/mp4') ||
-      'mp4'
-
-    const videoKey = `videos/generated/${profileId}/${generation.id}.${extension}`
-
-    const resultUrl = await uploadVideoBuffer({
-      buffer: generatedVideo.buffer,
-      key: videoKey,
-      contentType: generatedVideo.mimeType || 'video/mp4',
-    })
-
-    await insertGalleryItem({
-      profileId,
-      companionId: companion.id,
-      mediaUrl: resultUrl,
-      mediaType: VIDEO_MEDIA_KIND,
-    })
-
-    await markCompletedRecords({
-      mediaJobId: mediaJob.id,
-      generationId: generation.id,
-      resultUrl,
-      runpodJobId: generatedVideo.runpodJobId,
-    })
-
-    console.log(`[Media Pipeline] vídeo concluído | mediaJob=${mediaJob.id} | generation=${generation.id} | credits=${creditsCost}`)
-  } catch (error) {
-    console.error(
-      `[Media Pipeline] falha no processamento assíncrono de vídeo | mediaJob=${mediaJob?.id} | generation=${generation?.id}:`,
-      error,
-    )
-
-    await markMediaFailed({
-      mediaJobId: mediaJob?.id,
-      generationId: generation?.id,
-      errorMessage: error?.message,
-    })
-
-    await refundCredits(profileId, creditsCost, 'Estorno por falha na geração de vídeo', {
-      referenceType: 'media_job',
-      referenceId: mediaJob?.id,
-    }).catch((refundError) => {
-      console.error('[Media Pipeline] falha ao estornar créditos após erro de vídeo:', refundError)
-    })
   }
 }
 
 export async function createVideoMediaGeneration(profileId, input) {
-  if (!env.RUNPOD_VIDEO_ENDPOINT_ID) {
-    throw new ApiError(503, 'RunPod de vídeo ainda não configurado. Defina RUNPOD_VIDEO_ENDPOINT_ID para ativar o pipeline de vídeo.')
-  }
+  if (!queueEnabledForVideo()) throw new ApiError(503, 'Produção canônica indisponível: mantenha a solicitação bloqueada até os workers de vídeo serem habilitados.')
+  if (!env.RUNPOD_VIDEO_ENDPOINT_ID) throw new ApiError(503, 'RunPod de vídeo ainda não configurado.')
 
   const companionId = input.atrizId
-
-  if (!companionId) {
-    throw new ApiError(400, 'atrizId obrigatório para geração de vídeo.')
-  }
-
-  let mediaJob = null
-  let generation = null
-  let debited = false
-  let creditsCost = 0
-
   await assertNoProcessingMediaJob(profileId)
   await requireActiveSubscription(profileId, companionId)
-
   const companion = await getCompanion(companionId)
+  const context = await resolveCanonicalActorContext(companionId, 'video')
+  await assertApprovedActorIdentityForProduction({
+    actorProfileId: context.actorProfileId,
+    companionId,
+    authorizationId: context.authorizationId,
+    contentType: input.productionMode === 'v2v' ? 'live_action' : 'short_video',
+  })
   const options = await getSelectedVideoOptions(input)
   const pricing = await getVideoPricingRule()
-  creditsCost = pricing.creditsCost
+  const promptPayload = buildVideoPromptPayload({ companion, input, options, creditsCost: pricing.creditsCost })
 
-  const promptPayload = buildVideoPromptPayload({
-    companion,
-    input,
-    options,
-    creditsCost,
-  })
-
-  if (!promptPayload.sourceImageUrl) {
-    throw new ApiError(400, 'Imagem de referência da atriz não encontrada para FaceSwap.')
-  }
-
-  if (!promptPayload.baseVideoUrl) {
-    throw new ApiError(400, 'Vídeo base obrigatório para geração de vídeo. Configure FACESWAP_BASE_VIDEO_URL ou envie baseVideoUrl.')
-  }
-
-  mediaJob = await createMediaJob({
-    profileId,
-    companionId,
-    kind: getVideoJobKind(),
-    promptPayload,
-    creditsCost,
-  })
-
+  let mediaJob
+  let generation
+  let debited = false
   try {
-    await debitCreditsAtomically(profileId, creditsCost, 'Geração de vídeo', {
-      referenceType: 'media_job',
-      referenceId: mediaJob.id,
-    })
+    mediaJob = await createMediaJob({ profileId, companionId, kind: getVideoJobKind(), promptPayload, creditsCost: pricing.creditsCost })
+    await debitCreditsAtomically(profileId, pricing.creditsCost, 'Geração de vídeo', { referenceType: 'media_job', referenceId: mediaJob.id })
     debited = true
+    generation = await createVideoMediaGenerationRecord({ profileId, companionId, mediaJob, promptPayload, creditsCost: pricing.creditsCost })
 
-    generation = await createVideoMediaGenerationRecord({
-      profileId,
-      companionId,
-      mediaJob,
-      promptPayload,
-      creditsCost,
+    const directionResult = await createSceneDirection({
+      productionMode: promptPayload.productionMode,
+      baseSceneId: promptPayload.productionMode === 'v2v' ? promptPayload.baseSceneId : null,
+      slots: [{ slotIndex: 1, participantType: 'actor', actorProfileId: context.actorProfileId, companionId }],
+      prompt: promptPayload.prompt,
+      execute: true,
+      requestContext: { source: 'client_canonical_queue', profileId, mediaJobId: mediaJob.id, generationId: generation.id, creditsCost: pricing.creditsCost },
     })
 
-    console.log(`[Media Pipeline] vídeo enfileirado | mediaJob=${mediaJob.id} | generation=${generation.id} | credits=${creditsCost}`)
-
-    setImmediate(() => {
-      processVideoGenerationInBackground({
-        profileId,
-        companion,
-        mediaJob,
-        generation,
-        promptPayload,
-        creditsCost,
-      }).catch((error) => {
-        console.error('[Media Pipeline] erro não tratado no background de vídeo:', error)
-      })
-    })
-
-    return {
-      id: generation.id,
-      mediaJobId: mediaJob.id,
-      status: 'em_andamento',
-      progresso: 5,
-      accepted: true,
-      mediaKind: VIDEO_MEDIA_KIND,
-      message: 'Vídeo em processamento. A galeria será atualizada automaticamente.',
-    }
+    const direction = directionResult.direction
+    const queueJobId = String(directionResult.processing?.jobId || direction?.queueJobId || direction?.queue_job_id || direction?.id)
+    await markClientGenerationQueued({ mediaJobId: mediaJob.id, generationId: generation.id, queueJobId, canonical: { ...promptPayload, directionId: direction?.id || null, privateStorage: true, qaRequired: true } })
+    return { id: generation.id, mediaJobId: mediaJob.id, status: 'em_andamento', progresso: 10, accepted: true, canonicalQueue: promptPayload.productionMode === 'v2v' ? 'media:video-v2v' : 'media:video-short', directionId: direction?.id || null, queueJobId, message: 'Pedido aceito pela fila canônica. O Master privado seguirá para QA e renditions.' }
   } catch (error) {
-    await markMediaFailed({
-      mediaJobId: mediaJob?.id,
-      generationId: generation?.id,
-      errorMessage: error?.message,
-    })
-
-    if (debited) {
-      await refundCredits(profileId, creditsCost, 'Estorno por falha na geração de vídeo', {
-        referenceType: 'media_job',
-        referenceId: mediaJob?.id,
-      }).catch((refundError) => {
-        console.error('[Media Pipeline] falha ao estornar créditos após erro de vídeo:', refundError)
-      })
-    }
-
+    await markClientGenerationFailed({ mediaJobId: mediaJob?.id, generationId: generation?.id, message: error?.message })
+    if (debited) await refundCredits(profileId, pricing.creditsCost, 'Estorno por falha ao enfileirar vídeo', { referenceType: 'media_job', referenceId: mediaJob?.id }).catch(() => {})
     throw error
   }
 }
-

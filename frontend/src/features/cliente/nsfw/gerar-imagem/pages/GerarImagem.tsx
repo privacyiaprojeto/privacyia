@@ -5,11 +5,10 @@ import { ClienteLayout } from '@/features/cliente/components/ClienteLayout'
 import { TabsGerarNsfw } from '@/features/cliente/nsfw/components/TabsGerarNsfw'
 import { ModalSelecionarAtriz } from '@/features/cliente/nsfw/components/ModalSelecionarAtriz'
 import { MidiaViewerModal } from '@/features/cliente/nsfw/components/MidiaViewerModal'
-import { PromptAuto } from '@/features/cliente/nsfw/components/PromptAuto'
+import { ResumoEscolhaDinamica } from '@/features/cliente/nsfw/components/ResumoEscolhaDinamica'
 import { PainelGerados } from '@/features/cliente/nsfw/components/PainelGerados'
 import { SeletorOpcoesImagem } from '@/features/cliente/nsfw/gerar-imagem/components/SeletorOpcoesImagem'
 import { useGerarImagemPage } from '@/features/cliente/nsfw/gerar-imagem/hooks/useGerarImagemPage'
-import { CUSTO_IMAGEM } from '@/features/cliente/nsfw/types'
 
 export function GerarImagem() {
   const {
@@ -21,7 +20,8 @@ export function GerarImagem() {
     creditos,
     semCreditos,
     podeLancar,
-    prompt,
+    custoAtualLabel,
+    botaoGerarLabel,
     selecionadas,
     modalAberto,
     feedback,
@@ -31,6 +31,7 @@ export function GerarImagem() {
     loadingGerados,
     gerarImagem,
     denunciarImagem,
+    avatarSemProdutoPublicado,
     toggleOpcao,
     handleGerar,
     selecionarAtriz,
@@ -84,7 +85,18 @@ export function GerarImagem() {
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Personalize a cena
               </p>
-              {loadingOpcoes ? (
+              {!atrizSelecionada ? (
+                <button
+                  type="button"
+                  onClick={() => setModalAberto(true)}
+                  className="w-full rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-4 text-left transition hover:border-violet-500/70 hover:bg-zinc-900/70"
+                >
+                  <p className="text-sm font-semibold text-zinc-200">Escolha uma atriz primeiro</p>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                    As opções de pose, cenário, acessórios e visual serão carregadas conforme os produtos publicados pelo Admin.
+                  </p>
+                </button>
+              ) : loadingOpcoes ? (
                 <div className="space-y-2">
                   <div className="h-10 animate-pulse rounded-xl bg-zinc-800" />
                   <div className="flex gap-3">
@@ -98,16 +110,20 @@ export function GerarImagem() {
                   opcoes={opcoes}
                   selecionadas={selecionadas}
                   onToggle={toggleOpcao}
+                  emptyTitle={avatarSemProdutoPublicado ? 'Nenhum produto liberado para este avatar' : undefined}
+                  emptyDescription={avatarSemProdutoPublicado
+                    ? 'O Admin ainda não publicou uma combinação pronta para este avatar. Quando houver produto aprovado e publicado, as opções aparecerão aqui em cascata.'
+                    : undefined}
                 />
               )}
             </div>
 
-            {prompt && <PromptAuto prompt={prompt} />}
+            <ResumoEscolhaDinamica selecionadas={selecionadas} opcoes={opcoes} />
 
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-zinc-400">
-                  Custo: <span className="font-medium text-zinc-200">{CUSTO_IMAGEM} créditos</span>
+                  Custo: <span className="font-medium text-zinc-200">{custoAtualLabel}</span>
                 </span>
                 {creditosData && (
                   <span className="text-zinc-500">Saldo: {creditos}</span>
@@ -128,12 +144,12 @@ export function GerarImagem() {
                 {gerarImagem.isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Gerando imagem...
+                    Preparando mídia...
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
-                    Gerar imagem
+                    {botaoGerarLabel}
                   </>
                 )}
               </button>
@@ -141,7 +157,7 @@ export function GerarImagem() {
               {gerarImagem.isPending && (
                 <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-3">
                   <p className="text-xs font-medium text-violet-200">
-                    A IA está trabalhando na sua imagem. Aguarde a conclusão...
+                    Estamos preparando sua solicitação. Aguarde a conclusão...
                   </p>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-800">
                     <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-violet-500 to-purple-500" />

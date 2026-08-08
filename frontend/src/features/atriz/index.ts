@@ -1,1 +1,5 @@
 export { AtrizLayout } from '@/features/atriz/components/AtrizLayout'
+export { AtrizDashboard } from '@/features/atriz/pages/AtrizDashboard'
+export { MappingVaultPage } from '@/features/atriz/creator/pages/MappingVaultPage'
+export { ProductsPage } from '@/features/atriz/creator/pages/ProductsPage'
+export { Financeiro } from '@/features/atriz/financeiro/pages/Financeiro'

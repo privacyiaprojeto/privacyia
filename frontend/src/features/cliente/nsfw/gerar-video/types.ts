@@ -1,11 +1,21 @@
-export type TipoOpcaoVideo = 'acao' | 'roupa' | 'localizacao'
+export type TipoOpcaoVideo = string
 
 export interface OpcaoVideo {
   id: string
   label: string
   categoria: TipoOpcaoVideo
+  categoriaLabel?: string
+  titleId?: string
+  titleName?: string
+  source?: 'legacy' | 'guided_factory' | string
   imageUrl?: string
   videoUrl?: string
+}
+
+export interface GuidedSelectionInput {
+  titleId?: string | null
+  category?: string | null
+  itemId: string
 }
 
 export interface GerarVideoInput {
@@ -13,6 +23,7 @@ export interface GerarVideoInput {
   acaoId?: string | null
   roupaId?: string | null
   localizacaoId?: string | null
+  guidedSelections?: GuidedSelectionInput[]
 }
 
 export interface GerarVideoResponse {

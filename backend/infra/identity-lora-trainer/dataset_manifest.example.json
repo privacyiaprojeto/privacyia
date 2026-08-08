@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "privacy-identity-dataset-manifest-v1",
+  "actorProfileId": "00000000-0000-0000-0000-000000000000",
+  "kycCaseId": "00000000-0000-0000-0000-000000000000",
+  "triggerToken": "prv_actor_00000000_v1",
+  "consentSource": "approved_actor_mapping_and_active_terms_snapshot_required_before_training",
+  "baseModel": "Wan-AI/Wan2.1-VACE-14B",
+  "trainingEngine": "DiffSynth-Studio",
+  "trainingEngineCommit": "fb337fb",
+  "target": {
+    "width": 832,
+    "height": 480,
+    "frames": 17,
+    "precision": "bf16",
+    "rank": 32,
+    "alpha": 32,
+    "learningRate": 0.00005,
+    "targetModules": ["q", "k", "v", "o", "ffn.0", "ffn.2"]
+  },
+  "destination": {
+    "bucket": "privacy-media",
+    "prefix": "identity-training/00000000-0000-0000-0000-000000000000/run-id",
+    "public": false
+  },
+  "summary": {
+    "imageCount": 15,
+    "videoCount": 6,
+    "audioCount": 0,
+    "totalAssets": 21,
+    "recommendedImages": "15-20",
+    "recommendedShortVideos": "6-10"
+  },
+  "assets": [
+    {
+      "assetId": "00000000-0000-0000-0000-000000000001",
+      "mappingRequirementId": "00000000-0000-0000-0000-000000000002",
+      "systemTag": "face_front",
+      "mediaType": "image",
+      "contentType": "image/jpeg",
+      "byteSize": 123456,
+      "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source": {
+        "bucket": "privacy-media",
+        "key": "vault/actor-mapping/actor-id/private-image.jpg"
+      }
+    }
+  ],
+  "safety": {
+    "signedUrlsPersisted": false,
+    "publicUrlsAllowed": false,
+    "identityDocumentsExcludedByDatasetBuilder": true,
+    "embeddingsPersisted": false,
+    "noTrainingStarted": true
+  }
+}

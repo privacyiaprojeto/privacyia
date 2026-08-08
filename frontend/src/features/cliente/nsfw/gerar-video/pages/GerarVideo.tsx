@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { ClienteLayout } from '@/features/cliente/components/ClienteLayout'
 import { TabsGerarNsfw } from '@/features/cliente/nsfw/components/TabsGerarNsfw'
 import { ModalSelecionarAtriz } from '@/features/cliente/nsfw/components/ModalSelecionarAtriz'
-import { PromptAuto } from '@/features/cliente/nsfw/components/PromptAuto'
+import { ResumoEscolhaDinamica } from '@/features/cliente/nsfw/components/ResumoEscolhaDinamica'
 import { PainelGerados } from '@/features/cliente/nsfw/components/PainelGerados'
 import { MidiaViewerModal } from '@/features/cliente/nsfw/components/MidiaViewerModal'
 import { SeletorOpcoesVideo } from '@/features/cliente/nsfw/gerar-video/components/SeletorOpcoesVideo'
@@ -21,7 +21,6 @@ export function GerarVideo() {
     creditos,
     semCreditos,
     podeLancar,
-    prompt,
     selecionadas,
     modalAberto,
     midiaSelecionada,
@@ -102,7 +101,7 @@ export function GerarVideo() {
               )}
             </div>
 
-            {prompt && <PromptAuto prompt={prompt} />}
+            <ResumoEscolhaDinamica selecionadas={selecionadas} opcoes={opcoes} />
 
             {/* Footer de ação */}
             <div className="space-y-3">

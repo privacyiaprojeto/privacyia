@@ -1,5 +1,7 @@
 import { X } from 'lucide-react'
 import type { ItemGerado } from '@/features/cliente/nsfw/types'
+import { ProtectedMedia } from '@/features/cliente/media/components/ProtectedMedia'
+import type { MediaAvailabilityStatus, MediaStreamKind } from '@/features/cliente/media/api/protectedPlaybackApi'
 
 interface MidiaViewerModalProps {
   item: ItemGerado | null
@@ -8,35 +10,31 @@ interface MidiaViewerModalProps {
 
 function isAudioItem(tipo?: string, url?: string) {
   const value = `${tipo || ''} ${url || ''}`.toLowerCase()
-
-  return (
-    value.includes('audio') ||
-    value.endsWith('.mp3') ||
-    value.endsWith('.wav') ||
-    value.endsWith('.ogg') ||
-    value.endsWith('.m4a')
-  )
+  return value.includes('audio') || /\.(mp3|wav|ogg|m4a)(\?|$)/.test(value)
 }
 
 function isVideoItem(tipo?: string, url?: string) {
   const value = `${tipo || ''} ${url || ''}`.toLowerCase()
+  return value.includes('video') || value.includes('live_action') || /\.(mp4|webm|mov|m3u8)(\?|$)/.test(value)
+}
 
-  return (
-    value.includes('video') ||
-    value.endsWith('.mp4') ||
-    value.endsWith('.webm') ||
-    value.endsWith('.mov')
-  )
+function resolveMediaStatus(item: ItemGerado): MediaAvailabilityStatus {
+  if (item.mediaStatus) return item.mediaStatus
+  if (item.status === 'em_andamento') return 'processing'
+  if (item.status === 'erro') return 'unavailable'
+  return item.url ? 'ready' : 'unavailable'
 }
 
 export function MidiaViewerModal({ item, onClose }: MidiaViewerModalProps) {
-  if (!item?.url) return null
+  if (!item) return null
 
   const isAudio = isAudioItem(item.tipo, item.url)
   const isVideo = isVideoItem(item.tipo, item.url)
+  const mediaType = isAudio ? 'audio' : isVideo ? 'video' : 'image'
+  const mediaStatus = resolveMediaStatus(item)
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 px-4 py-6">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 px-4 py-6" onContextMenu={(event) => event.preventDefault()}>
       <button
         type="button"
         onClick={onClose}
@@ -47,41 +45,28 @@ export function MidiaViewerModal({ item, onClose }: MidiaViewerModalProps) {
       </button>
 
       <div className="w-full max-w-5xl rounded-2xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
-        <div className="mb-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-white">{item.atrizNome || 'Mídia'}</p>
+          <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+            {mediaStatus === 'ready' ? 'Disponível' : mediaStatus === 'processing' ? 'Em preparação' : 'Indisponível'}
+          </span>
         </div>
 
-        {isAudio ? (
-          <div className="rounded-2xl bg-zinc-900 p-6">
-            <audio controls autoPlay className="w-full">
-              <source src={item.url} />
-              Seu navegador não suporta reprodução de áudio.
-            </audio>
-          </div>
-        ) : isVideo ? (
-          <div className="flex justify-center rounded-2xl bg-black">
-            <video
-              key={item.id}
-              src={item.url}
-              controls
-              autoPlay
-              playsInline
-              preload="auto"
-              className="max-h-[80vh] w-full rounded-2xl object-contain"
-            >
-              <source src={item.url} type="video/mp4" />
-              Seu navegador não suporta reprodução de vídeo.
-            </video>
-          </div>
-        ) : (
-          <div className="flex justify-center">
-            <img
-              src={item.url}
-              alt={item.atrizNome || 'Imagem gerada'}
-              className="max-h-[80vh] w-auto rounded-2xl object-contain"
-            />
-          </div>
-        )}
+        <ProtectedMedia
+          sourceUrl={item.url}
+          mediaType={mediaType}
+          mediaStatus={mediaStatus}
+          streamKind={(item.streamKind || null) as MediaStreamKind}
+          alt={item.atrizNome || 'Imagem protegida'}
+          controls
+          autoPlay={mediaStatus === 'ready'}
+          muted={false}
+          playsInline
+          preload="metadata"
+          stateMessage={item.mediaMessage || null}
+          containerClassName={isAudio ? 'rounded-2xl bg-zinc-900 p-6' : 'flex min-h-[220px] max-h-[80vh] justify-center overflow-hidden rounded-2xl bg-black'}
+          className={isAudio ? 'w-full' : 'max-h-[80vh] w-full object-contain'}
+        />
       </div>
     </div>
   )

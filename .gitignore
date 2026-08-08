@@ -35,9 +35,7 @@ pnpm-debug.log*
 coverage/
 *.tsbuildinfo
 
-# IDE e assistentes locais
-.cursor/
-.claude/
+# IDE
 .vscode/*
 !.vscode/extensions.json
 .idea/

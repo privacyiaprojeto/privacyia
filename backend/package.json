@@ -5,21 +5,31 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
-  },
-  "dependencies": {
+  "dev": "nodemon src/server.js",
+  "start": "node src/server.js",
+  "worker:rendition": "node src/rendition-worker.js",
+  "worker:all": "node src/all-workers.js"
+},
+"dependencies": {
+    "@aws-sdk/client-s3": "^3.1070.0",
+    "@aws-sdk/lib-storage": "^3.1070.0",
+    "@aws-sdk/s3-request-presigner": "^3.1070.0",
     "@supabase/supabase-js": "^2.57.4",
     "axios": "^1.12.2",
+    "bullmq": "^5.78.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^4.21.2",
     "helmet": "^8.1.0",
+    "ioredis": "^5.11.1",
     "morgan": "^1.10.0",
-    "zod": "^4.1.5",
-    "@aws-sdk/client-s3": "^3.1037.0"
+    "sharp": "^0.35.1",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
+  },
+  "engines": {
+    "node": ">=22 <23"
   }
 }

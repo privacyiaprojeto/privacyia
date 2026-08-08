@@ -1,29 +1,27 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
+import {
+  getPublishedCatalogCompanion,
+  listPublishedCatalogCompanions,
+} from './client-catalog-read-model.service.js'
 
 
-export async function listActresses(profileId) {
-  const { data, error } = await supabaseAdmin
-    .from('companions')
-    .select('id, slug, name, avatar_url, banner_url, video_url, thumbnail_url, bio, age, height_label, gallery_urls')
-    .order('sort_order', { ascending: true })
+export async function listActresses(_profileId) {
+  const companions = await listPublishedCatalogCompanions({ limit: 100 })
 
-  if (error) {
-    throw new ApiError(500, 'Erro ao buscar atrizes.', error)
-  }
-
-  return (data || []).map((item) => ({
-    id: item.id,
-    slug: item.slug,
-    nome: item.name,
-    avatar: item.avatar_url || item.thumbnail_url,
-    banner: item.banner_url || item.thumbnail_url || item.avatar_url,
-    videoUrl: item.video_url || item.banner_url || item.thumbnail_url || item.avatar_url,
-    thumbnailUrl: item.thumbnail_url || null,
-    descricao: item.bio || '',
-    idade: item.age || 0,
-    altura: item.height_label || '',
-    fotos: item.gallery_urls || [],
+  return companions.map((companion) => ({
+    id: companion.id,
+    slug: companion.slug,
+    nome: companion.nome,
+    avatar: companion.avatar,
+    banner: companion.banner,
+    videoUrl: companion.videoUrl || companion.banner || companion.avatar,
+    thumbnailUrl: companion.thumbnailUrl,
+    descricao: companion.descricao,
+    idade: companion.idade,
+    altura: companion.altura,
+    fotos: companion.fotos,
+    produtosAtivos: companion.activeProductsCount,
   }))
 }
 
@@ -75,51 +73,20 @@ export async function getActressTimeline(atrizId) {
   }))
 }
 
-export async function getActressPublicProfile(profileId, slug) {
-  const { data: companion, error } = await supabaseAdmin
-    .from('companions')
-    .select(`
-      id,
-      slug,
-      name,
-      avatar_url,
-      banner_url,
-      video_url,
-      is_online,
-      bio,
-      age,
-      height_label,
-      gallery_urls,
-      level_current,
-      xp_current,
-      xp_next_level
-    `)
-    .eq('slug', slug)
-    .maybeSingle()
+function isProtectedClientMediaUrl(value) {
+  const url = String(value || '').trim()
+  return url.startsWith('/media/deliveries/') && url.includes('/protected-view')
+}
 
-  if (error) {
-    throw new ApiError(500, 'Erro ao buscar perfil público da atriz.', error)
-  }
-
-  if (!companion) {
-    throw new ApiError(404, 'Atriz não encontrada.')
-  }
+export async function getActressPublicProfile(profileId, identifier) {
+  const { companion, products } = await getPublishedCatalogCompanion(identifier)
 
   const [
-    galleryItemsResult,
     mySubscriptionResult,
     followersResult,
     conversationsResult,
-    liveActionsResult,
-    liveAudiosResult,
     historyResult,
   ] = await Promise.all([
-    supabaseAdmin
-      .from('gallery_items')
-      .select('id, media_type, media_url, created_at')
-      .eq('companion_id', companion.id)
-      .order('created_at', { ascending: false })
-      .limit(20),
     supabaseAdmin
       .from('companion_subscriptions')
       .select('id')
@@ -137,18 +104,6 @@ export async function getActressPublicProfile(profileId, slug) {
       .select('id', { count: 'exact', head: true })
       .eq('companion_id', companion.id),
     supabaseAdmin
-      .from('companion_live_actions')
-      .select('id, nome, nivel_requerido, bloqueado_padrao, sort_order')
-      .eq('companion_id', companion.id)
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true }),
-    supabaseAdmin
-      .from('companion_live_audios')
-      .select('id, titulo, duracao_label, nivel_requerido, bloqueado_padrao, sort_order')
-      .eq('companion_id', companion.id)
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true }),
-    supabaseAdmin
       .from('media_generations')
       .select('id, media_kind, result_url, created_at')
       .eq('profile_id', profileId)
@@ -158,96 +113,140 @@ export async function getActressPublicProfile(profileId, slug) {
       .limit(24),
   ])
 
-  const [
-    galleryItems,
-    mySubscription,
-    followersCount,
-    conversationsCount,
-    liveActions,
-    liveAudios,
-    history,
-  ] = [
-    galleryItemsResult.data || [],
-    mySubscriptionResult.data,
-    followersResult.count || 0,
-    conversationsResult.count || 0,
-    liveActionsResult.data || [],
-    liveAudiosResult.data || [],
-    historyResult.data || [],
-  ]
-
   if (
-    galleryItemsResult.error ||
     mySubscriptionResult.error ||
     followersResult.error ||
     conversationsResult.error ||
-    liveActionsResult.error ||
-    liveAudiosResult.error ||
     historyResult.error
   ) {
-    throw new ApiError(500, 'Erro ao montar o perfil detalhado da atriz.', {
-      galleryItemsError: galleryItemsResult.error,
+    throw new ApiError(500, 'Erro ao montar o perfil público.', {
       mySubscriptionError: mySubscriptionResult.error,
       followersError: followersResult.error,
       conversationsError: conversationsResult.error,
-      liveActionsError: liveActionsResult.error,
-      liveAudiosError: liveAudiosResult.error,
       historyError: historyResult.error,
     })
   }
 
-  const fotos =
-    Array.isArray(companion.gallery_urls) && companion.gallery_urls.length > 0
-      ? companion.gallery_urls
-      : galleryItems
-          .filter((item) => item.media_type === 'image')
-          .map((item) => item.media_url)
+  const publishedContract = (product) => {
+    const status = product.preview?.mediaStatus || 'unavailable'
+    const renderer = product.preview?.type === 'video'
+      ? 'video'
+      : product.preview?.type === 'audio'
+        ? 'audio'
+        : 'image'
 
-  const nivelAtual = companion.level_current || 1
-  const xpAtual = companion.xp_current || 0
-  const xpProximoNivel = companion.xp_next_level || 100
+    if (status === 'processing') {
+      return {
+        mediaType: product.mediaType,
+        clientSupported: true,
+        clientOpenable: false,
+        clientPurchasable: false,
+        protectedRenderer: renderer,
+        reasonCode: 'RENDITION_PROCESSING',
+        severity: 'REVIEW',
+        userMessage: product.preview?.userMessage || 'Mídia em preparação.',
+      }
+    }
+
+    if (status !== 'ready') {
+      return {
+        mediaType: product.mediaType,
+        clientSupported: true,
+        clientOpenable: false,
+        clientPurchasable: false,
+        protectedRenderer: renderer,
+        reasonCode: 'MEDIA_UNAVAILABLE',
+        severity: 'BLOCKED',
+        userMessage: product.preview?.userMessage || 'Mídia indisponível.',
+      }
+    }
+
+    return {
+      mediaType: product.mediaType,
+      clientSupported: true,
+      clientOpenable: false,
+      clientPurchasable: false,
+      protectedRenderer: renderer,
+      reasonCode: 'READ_ONLY_PUBLIC_CATALOG',
+      severity: 'REVIEW',
+      userMessage: 'Preview disponível. A entrega protegida depende do acesso comercial ao produto.',
+    }
+  }
+
+  const liveActions = products
+    .filter((product) => ['live_action', 'video', 'short_video', 'video_curto'].includes(product.mediaType))
+    .map((product) => ({
+      id: product.id,
+      nome: product.title,
+      titulo: product.title,
+      descricao: product.description || 'Cena publicada pelo Admin.',
+      priceCredits: product.priceCredits,
+      nivelRequerido: 1,
+      bloqueado: true,
+      purchased: false,
+      previewUrl: product.preview?.url || null,
+      mediaStatus: product.preview?.mediaStatus || 'unavailable',
+      streamKind: product.preview?.streamKind || null,
+      destination: product.destination,
+      assetId: product.asset?.id || null,
+      protectedViewUrl: null,
+      mediaContract: publishedContract(product),
+    }))
+
+  const liveAudios = products
+    .filter((product) => ['audio', 'live_audio', 'audio_live', 'tts'].includes(product.mediaType))
+    .map((product) => ({
+      id: product.id,
+      titulo: product.title,
+      descricao: product.description || 'Áudio publicado pelo Admin.',
+      duracao: 'Premium',
+      priceCredits: product.priceCredits,
+      bloqueado: true,
+      purchased: false,
+      previewUrl: product.preview?.url || null,
+      mediaStatus: product.preview?.mediaStatus || 'unavailable',
+      streamKind: product.preview?.streamKind || null,
+      destination: product.destination,
+      assetId: product.asset?.id || null,
+      protectedViewUrl: null,
+      companionId: companion.id,
+      combinationId: product.id,
+      mediaContract: publishedContract(product),
+    }))
+
+  const publicPhotos = companion.fotos.length > 0
+    ? companion.fotos
+    : [companion.banner, companion.avatar].filter(Boolean)
 
   return {
     id: companion.id,
     slug: companion.slug,
-    nome: companion.name,
-    avatar: companion.avatar_url,
-    banner: companion.banner_url,
-    videoUrl: companion.video_url || companion.banner_url || companion.avatar_url,
-    descricao: companion.bio || '',
-    idade: companion.age || 0,
-    altura: companion.height_label || '',
-    fotos,
-    assinaturaAtiva: Boolean(mySubscription),
-    online: companion.is_online ?? false,
-    totalConteudos: galleryItems.length,
-    totalChats: conversationsCount,
-    seguidores: followersCount,
-    nivelAtual,
-    xpAtual,
-    xpProximoNivel,
-    liveActions: liveActions.map((item) => ({
-      id: item.id,
-      nome: item.nome,
-      nivelRequerido: item.nivel_requerido || 1,
-      bloqueado:
-        Boolean(item.bloqueado_padrao) ||
-        nivelAtual < (item.nivel_requerido || 1),
-    })),
-    liveAudios: liveAudios.map((item) => ({
-      id: item.id,
-      titulo: item.titulo,
-      duracao: item.duracao_label || '00:00',
-      bloqueado:
-        Boolean(item.bloqueado_padrao) ||
-        nivelAtual < (item.nivel_requerido || 1),
-    })),
-    historico: history.map((item) => ({
-      id: item.id,
-      tipo: item.media_kind,
-      url: item.result_url,
-      criadaEm: item.created_at,
-    })),
+    nome: companion.nome,
+    avatar: companion.avatar,
+    banner: companion.banner,
+    videoUrl: companion.videoUrl || companion.banner || companion.avatar,
+    descricao: companion.descricao,
+    idade: companion.idade,
+    altura: companion.altura,
+    fotos: publicPhotos,
+    assinaturaAtiva: Boolean(mySubscriptionResult.data),
+    online: companion.online,
+    totalConteudos: products.length,
+    totalChats: conversationsResult.count || 0,
+    seguidores: followersResult.count || 0,
+    nivelAtual: 1,
+    xpAtual: 0,
+    xpProximoNivel: 100,
+    liveActions,
+    liveAudios,
+    historico: (historyResult.data || [])
+      .filter((item) => isProtectedClientMediaUrl(item.result_url))
+      .map((item) => ({
+        id: item.id,
+        tipo: item.media_kind,
+        url: item.result_url,
+        criadaEm: item.created_at,
+      })),
   }
 }
 

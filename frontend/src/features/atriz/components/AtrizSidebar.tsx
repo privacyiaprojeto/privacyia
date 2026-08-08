@@ -1,5 +1,5 @@
-import { NavLink } from 'react-router'
-import { LayoutDashboard, Wallet, Images, Users, Bell, Settings, LogOut } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router'
+import { LayoutDashboard, Wallet, Images, Bell, Settings, LogOut, FileText, LifeBuoy } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { User } from '@/shared/types/user'
 
@@ -9,32 +9,39 @@ interface AtrizSidebarProps {
 }
 
 const NAV_MAIN = [
-  { label: 'Dashboard',     icon: LayoutDashboard, to: '/atriz',               end: true },
-  { label: 'Financeiro',    icon: Wallet,           to: '/atriz/financeiro',    end: false },
-  { label: 'Galeria',       icon: Images,           to: '/atriz/galeria',       end: false },
-  { label: 'Assinantes',    icon: Users,            to: '/atriz/assinantes',    end: false },
-  { label: 'Notificações',  icon: Bell,             to: '/atriz/notificacoes',  end: false },
+  { label: 'Visão Geral',    icon: LayoutDashboard, to: '/atriz',              end: true },
+  { label: 'Estúdio de Mapeamento', icon: FileText, to: '/atriz/mapeamento', end: false },
+  { label: 'Meus Produtos',  icon: Images,         to: '/atriz/produtos',     end: false },
+  { label: 'Financeiro',     icon: Wallet,         to: '/atriz/financeiro',   end: false },
+  { label: 'Notificações',   icon: Bell,           to: '/atriz/notificacoes', end: false },
 ] as const
 
 const NAV_BOTTOM = [
   { label: 'Configurações', icon: Settings, to: '/atriz/configuracoes', end: false },
+  { label: 'Suporte',       icon: LifeBuoy, to: '/atriz/suporte', end: false },
 ] as const
 
 const NAV_ITEM_BASE = 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors'
 const NAV_ITEM_ACTIVE = 'bg-pink-500/15 text-pink-400'
 const NAV_ITEM_IDLE = 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
 
-function navClass({ isActive }: { isActive: boolean }) {
-  return clsx(NAV_ITEM_BASE, isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE)
-}
-
 export function AtrizSidebar({ user, onLogout }: AtrizSidebarProps) {
+  const location = useLocation()
   const initials = (user?.name ?? 'A')
     .split(' ')
     .slice(0, 2)
     .map((n) => n[0])
     .join('')
     .toUpperCase()
+
+  function navClassFor(to: string) {
+    const [targetPath, query] = to.split('?')
+    const targetSearch = query ? `?${query}` : ''
+    const isActive = targetSearch
+      ? location.pathname === targetPath && location.search === targetSearch
+      : location.pathname === targetPath
+    return clsx(NAV_ITEM_BASE, isActive ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE)
+  }
 
   return (
     <aside className="flex h-screen w-64 flex-shrink-0 flex-col border-r border-zinc-800 bg-zinc-900">
@@ -50,7 +57,7 @@ export function AtrizSidebar({ user, onLogout }: AtrizSidebarProps) {
       {/* Nav principal */}
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-4">
         {NAV_MAIN.map(({ label, icon: Icon, to, end }) => (
-          <NavLink key={to} to={to} end={end} className={navClass}>
+          <NavLink key={to} to={to} end={end} className={navClassFor(to)}>
             <Icon size={18} strokeWidth={1.75} />
             {label}
           </NavLink>
@@ -60,7 +67,7 @@ export function AtrizSidebar({ user, onLogout }: AtrizSidebarProps) {
       {/* Nav inferior + user */}
       <div className="flex-shrink-0 border-t border-zinc-800 px-3 py-4 space-y-0.5">
         {NAV_BOTTOM.map(({ label, icon: Icon, to, end }) => (
-          <NavLink key={to} to={to} end={end} className={navClass}>
+          <NavLink key={to} to={to} end={end} className={navClassFor(to)}>
             <Icon size={18} strokeWidth={1.75} />
             {label}
           </NavLink>

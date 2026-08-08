@@ -25,7 +25,7 @@ export function useGerarVideoPage() {
   const [midiaSelecionada, setMidiaSelecionada] = useState<ItemGerado | null>(null)
 
   const { data: atrizes = [], isLoading: loadingAtrizes } = useAtrizesAssinadas()
-  const { data: opcoes = [], isLoading: loadingOpcoes } = useOpcoesVideo()
+  const { data: opcoes = [], isLoading: loadingOpcoes } = useOpcoesVideo(atrizId)
   const { data: gerados = [], isLoading: loadingGerados } = useGeradosVideo()
   const { data: creditosData } = useCreditos()
   const gerarVideo = useGerarVideo()
@@ -48,9 +48,23 @@ export function useGerarVideoPage() {
     }))
   }
 
+  function buildGuidedSelections() {
+    return Object.entries(selecionadas)
+      .filter(([, itemId]) => Boolean(itemId))
+      .map(([categoria, itemId]) => ({
+        titleId: opcoes.find((opcao) => opcao.id === itemId)?.titleId || null,
+        category: categoria,
+        itemId: itemId as string,
+      }))
+  }
+
   function handleGerar() {
     if (!atrizId) return
-    gerarVideo.mutate({ atrizId, ...selecionadas })
+    gerarVideo.mutate({
+      atrizId,
+      ...selecionadas,
+      guidedSelections: buildGuidedSelections(),
+    })
   }
 
   function selecionarAtriz(id: string) {

@@ -1,33 +1,74 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import type { OpcaoImagem, TipoOpcaoImagem } from '@/features/cliente/nsfw/gerar-imagem/types'
 
-const TABS: { key: TipoOpcaoImagem; label: string }[] = [
-  { key: 'roupa', label: 'Roupa' },
-  { key: 'posicao', label: 'Pose' },
-  { key: 'acessorio', label: 'Acessório' },
-  { key: 'ambiente', label: 'Cenário' },
-]
+const LABELS_FIXOS: Record<string, string> = {
+  roupa: 'Roupa',
+  posicao: 'Pose',
+  acessorio: 'Acessório',
+  ambiente: 'Cenário',
+}
 
 interface SeletorOpcoesImagemProps {
   opcoes: OpcaoImagem[]
   selecionadas: Record<TipoOpcaoImagem, string | null>
   onToggle: (categoria: TipoOpcaoImagem, id: string) => void
+  emptyTitle?: string
+  emptyDescription?: string
 }
 
-export function SeletorOpcoesImagem({ opcoes, selecionadas, onToggle }: SeletorOpcoesImagemProps) {
-  const [tabAtiva, setTabAtiva] = useState<TipoOpcaoImagem>('roupa')
+function getCategoriaLabel(opcao: OpcaoImagem) {
+  return opcao.categoriaLabel || opcao.titleName || LABELS_FIXOS[opcao.categoria] || opcao.categoria
+}
+
+export function SeletorOpcoesImagem({
+  opcoes,
+  selecionadas,
+  onToggle,
+  emptyTitle = 'Nenhuma opção foi liberada para este avatar ainda.',
+  emptyDescription = 'Assim que o Admin publicar produtos aprovados, as opções aparecerão aqui em sequência.',
+}: SeletorOpcoesImagemProps) {
+  const tabs = useMemo(() => {
+    const map = new Map<TipoOpcaoImagem, string>()
+
+    for (const opcao of opcoes) {
+      if (!map.has(opcao.categoria)) {
+        map.set(opcao.categoria, getCategoriaLabel(opcao))
+      }
+    }
+
+    return Array.from(map.entries()).map(([key, label]) => ({ key, label }))
+  }, [opcoes])
+
+  const [tabAtiva, setTabAtiva] = useState<TipoOpcaoImagem>(tabs[0]?.key || 'roupa')
+
+  useEffect(() => {
+    if (tabs.length === 0) return
+    if (!tabs.some((tab) => tab.key === tabAtiva)) {
+      setTabAtiva(tabs[0].key)
+    }
+  }, [tabs, tabAtiva])
+
   const opcoesDaTab = opcoes.filter((o) => o.categoria === tabAtiva)
+
+  if (tabs.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-4">
+        <p className="text-sm font-semibold text-zinc-200">{emptyTitle}</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500">{emptyDescription}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 rounded-xl bg-zinc-800/60 p-1">
-        {TABS.map((tab) => (
+      <div className="flex gap-1 overflow-x-auto rounded-xl bg-zinc-800/60 p-1 scrollbar-none">
+        {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setTabAtiva(tab.key)}
             className={clsx(
-              'flex-1 rounded-lg py-1.5 text-xs font-medium transition',
+              'min-w-[5.5rem] flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition',
               tabAtiva === tab.key
                 ? 'bg-violet-600 text-white'
                 : 'text-zinc-400 hover:text-zinc-200',

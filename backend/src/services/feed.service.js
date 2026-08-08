@@ -1,103 +1,65 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
+import {
+  listPublishedCatalogCompanions,
+  listPublishedCatalogProducts,
+} from './client-catalog-read-model.service.js'
 
-function mapCompanionCard(companion) {
+function mapPublicCompanionCard(companion) {
   return {
     id: companion.id,
     slug: companion.slug,
-    nome: companion.name,
-    avatar: companion.avatar_url,
-    banner: companion.banner_url,
+    nome: companion.nome,
+    avatar: companion.avatar,
+    banner: companion.banner,
+    videoUrl: companion.videoUrl || undefined,
+    thumbnailUrl: companion.thumbnailUrl || null,
   }
 }
 
-function mapPost(row, interaction) {
+function mapCatalogPost(product) {
   return {
-    id: row.id,
-    atriz: mapCompanionCard(row.companions),
-    tipo: row.media_type === 'video' ? 'video' : 'foto',
-    url: row.media_url,
-    curtidas: row.likes_count || 0,
-    comentarios: row.comments_count || 0,
-    curtido: interaction?.liked || false,
-    salvo: interaction?.saved || false,
+    id: product.id,
+    atriz: mapPublicCompanionCard(product.companion),
+    tipo: product.preview.type === 'video' ? 'video' : 'foto',
+    url: product.preview.url,
+    mediaStatus: product.preview.mediaStatus,
+    streamKind: product.preview.streamKind,
+    mediaMessage: product.preview.userMessage,
+    curtidas: 0,
+    comentarios: 0,
+    curtido: false,
+    salvo: false,
+    readOnly: true,
+    produto: {
+      id: product.id,
+      nome: product.title,
+      tipo: product.mediaType,
+      precoCreditos: product.priceCredits,
+    },
   }
 }
 
-export async function listFeedPosts(profileId) {
-  const { data: posts, error } = await supabaseAdmin
-    .from('feed_posts')
-    .select(`
-      id,
-      companion_id,
-      media_type,
-      media_url,
-      likes_count,
-      comments_count,
-      created_at,
-      companions:companion_id (
-        id,
-        slug,
-        name,
-        avatar_url,
-        banner_url
-      )
-    `)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
+export async function listFeedPosts(_profileId) {
+  const products = await listPublishedCatalogProducts({
+    destinations: ['feed'],
+    limit: 200,
+  })
 
-  if (error) {
-    throw new ApiError(500, 'Erro ao carregar feed.', error)
-  }
-
-  const postIds = (posts || []).map((post) => post.id)
-  let interactionMap = new Map()
-
-  if (postIds.length > 0) {
-    const { data: interactions, error: interactionsError } = await supabaseAdmin
-      .from('feed_post_interactions')
-      .select('post_id, liked, saved')
-      .eq('profile_id', profileId)
-      .in('post_id', postIds)
-
-    if (interactionsError) {
-      throw new ApiError(500, 'Erro ao carregar interações do feed.', interactionsError)
-    }
-
-    interactionMap = new Map((interactions || []).map((item) => [item.post_id, item]))
-  }
-
-  return (posts || []).map((post) => mapPost(post, interactionMap.get(post.id)))
+  return products.map(mapCatalogPost)
 }
 
 export async function listFeedSuggestions() {
-  const { data, error } = await supabaseAdmin
-    .from('companions')
-    .select('id, slug, name, avatar_url, banner_url')
-    .order('sort_order', { ascending: true })
-    .limit(10)
-
-  if (error) {
-    throw new ApiError(500, 'Erro ao buscar sugestões.', error)
-  }
-
-  return (data || []).map(mapCompanionCard)
+  const companions = await listPublishedCatalogCompanions({ limit: 10 })
+  return companions.map(mapPublicCompanionCard)
 }
 
 export async function listFeedTop10() {
-  const { data, error } = await supabaseAdmin
-    .from('companions')
-    .select('id, slug, name, avatar_url, banner_url')
-    .order('sort_order', { ascending: true })
-    .limit(10)
+  const companions = await listPublishedCatalogCompanions({ limit: 10 })
 
-  if (error) {
-    throw new ApiError(500, 'Erro ao buscar top 10.', error)
-  }
-
-  return (data || []).map((companion, index) => ({
+  return companions.map((companion, index) => ({
     posicao: index + 1,
-    atriz: mapCompanionCard(companion),
+    atriz: mapPublicCompanionCard(companion),
   }))
 }
 

@@ -11,9 +11,9 @@ function normalizeRole(role) {
 function resolveRole({ authUser, existingProfileRole, explicitRole }) {
   return (
     normalizeRole(explicitRole) ||
+    normalizeRole(existingProfileRole) ||
     normalizeRole(authUser?.app_metadata?.role) ||
     normalizeRole(authUser?.user_metadata?.role) ||
-    normalizeRole(existingProfileRole) ||
     'cliente'
   )
 }

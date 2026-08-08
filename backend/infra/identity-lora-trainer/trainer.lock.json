@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "privacy-identity-lora-trainer-lock-v1",
+  "trainingEngine": "DiffSynth-Studio",
+  "repository": "https://github.com/modelscope/DiffSynth-Studio.git",
+  "commit": "fb337fb",
+  "baseModel": "Wan-AI/Wan2.1-VACE-14B",
+  "trainingMode": "vace_lora",
+  "dryRunOnly": true,
+  "modelDownloadsAllowedDuringReadiness": false,
+  "runPodAllowedDuringReadiness": false,
+  "automaticRetry": false
+}

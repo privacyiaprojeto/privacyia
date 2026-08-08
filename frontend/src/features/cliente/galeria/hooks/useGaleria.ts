@@ -3,7 +3,8 @@ import { getGaleria } from '@/features/cliente/galeria/api/getGaleria'
 
 export function useGaleria(q?: string) {
   return useQuery({
-    queryKey: ['galeria', q ?? ''],
+    queryKey: ['galeria', 'entregas', q ?? ''],
     queryFn: () => getGaleria(q),
+    refetchOnWindowFocus: true,
   })
 }

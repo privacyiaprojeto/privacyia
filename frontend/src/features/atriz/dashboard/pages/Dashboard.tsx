@@ -1,6 +1,6 @@
 import {
   TrendingUp, Users, DollarSign, MessageCircle, Coins,
-  UserPlus, Wallet, Image, Zap, CalendarRange,
+  UserPlus, Wallet, Image, Zap, CalendarRange, Eye, ShieldCheck, Store,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -8,10 +8,7 @@ import {
 } from 'recharts'
 import { useDashboardPage } from '@/features/atriz/dashboard/hooks/useDashboardPage'
 import type { PeriodoDashboard, TipoAtividade, AtividadeItem } from '@/features/atriz/dashboard/types'
-
-function formatCurrency(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
+import { creatorMediaTypeLabel, formatCreatorCredits } from '@/features/atriz/creator/utils'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -45,7 +42,7 @@ function AtividadeRow({ item }: { item: AtividadeItem }) {
       </div>
       {item.valor !== undefined && (
         <span className="shrink-0 text-xs font-semibold text-emerald-400">
-          +{formatCurrency(item.valor)}
+          +{formatCreatorCredits(item.valor)}
         </span>
       )}
     </div>
@@ -61,17 +58,21 @@ function ChartTooltipContent({ active, payload, label }: {
   return (
     <div className="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 shadow-xl">
       <p className="text-xs text-zinc-400">{label}</p>
-      <p className="text-sm font-bold text-emerald-400">{formatCurrency(payload[0].value)}</p>
+      <p className="text-sm font-bold text-emerald-400">{formatCreatorCredits(payload[0].value)}</p>
     </div>
   )
 }
 
 export function Dashboard() {
-  const { periodo, setPeriodo, de, setDe, ate, setAte, data, isLoading } = useDashboardPage()
+  const { periodo, setPeriodo, de, setDe, ate, setAte, data, isLoading, isError } = useDashboardPage()
 
   const resumo = data?.resumo
   const grafico = data?.grafico ?? []
   const atividades = data?.atividades ?? []
+  const publication = data?.publication
+  const publishedProducts = publication?.publishedProducts ?? 0
+  const hiddenProducts = publication?.hiddenProducts ?? 0
+  const protectedBeforePurchase = publication?.clientMediaVisibleBeforePurchase === false
 
   const periodoLabel: Record<PeriodoDashboard, string> = {
     diario: 'hoje',
@@ -82,36 +83,50 @@ export function Dashboard() {
 
   const STAT_CARDS = [
     {
-      label: 'Ganhos',
-      value: resumo ? formatCurrency(resumo.ganhosMes) : 'R$ 0,00',
+      label: 'Repasse estimado',
+      value: resumo ? formatCreatorCredits(resumo.ganhosMes) : '0 créditos',
       icon: DollarSign,
       color: 'text-emerald-400 bg-emerald-500/10',
     },
     {
-      label: 'Assinantes',
+      label: 'Vendas',
       value: resumo ? String(resumo.totalAssinantes) : '0',
       icon: Users,
       color: 'text-blue-400 bg-blue-500/10',
     },
     {
-      label: 'Mensagens (IA)',
+      label: 'Produtos ativos',
       value: resumo ? String(resumo.mensagensIA) : '0',
       icon: MessageCircle,
       color: 'text-violet-400 bg-violet-500/10',
     },
     {
-      label: 'Imagens geradas',
+      label: 'Pendências',
       value: resumo ? String(resumo.imagensGeradas) : '0',
       icon: TrendingUp,
       color: 'text-pink-400 bg-pink-500/10',
     },
     {
-      label: 'Créditos gastos',
-      value: resumo ? resumo.creditosGastos.toLocaleString('pt-BR') : '0',
+      label: 'Receita bruta',
+      value: resumo ? formatCreatorCredits(resumo.creditosGastos) : '0 créditos',
       icon: Coins,
       color: 'text-amber-400 bg-amber-500/10',
     },
   ] as const
+
+  if (!isLoading && isError && !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="rounded-2xl bg-zinc-900 p-5">
+          <TrendingUp size={32} className="text-zinc-600" strokeWidth={1.5} />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold text-zinc-300">Seu painel ainda está sendo preparado</h2>
+        <p className="mt-1 max-w-sm text-sm text-zinc-500">
+          Assim que houver produtos, vendas ou materiais para analisar, os dados aparecerão aqui.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -168,11 +183,60 @@ export function Dashboard() {
         ))}
       </div>
 
+      <section data-actor-panel-publication-visibility="true" className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Visibilidade dos produtos</p>
+            <h2 className="mt-1 text-xl font-bold text-zinc-100">Publicação para Cliente</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-500">
+              Acompanhe quais produtos do seu avatar estão visíveis para clientes. A mídia completa continua protegida antes da compra.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:w-[520px]">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+              <div className="inline-flex rounded-lg bg-emerald-500/10 p-2 text-emerald-400"><Eye size={16} /></div>
+              <p className="mt-2 text-2xl font-bold text-zinc-100">{publishedProducts}</p>
+              <p className="text-xs text-zinc-500">Produtos visíveis para cliente</p>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+              <div className="inline-flex rounded-lg bg-amber-500/10 p-2 text-amber-400"><Store size={16} /></div>
+              <p className="mt-2 text-2xl font-bold text-zinc-100">{hiddenProducts}</p>
+              <p className="text-xs text-zinc-500">Variações aprovadas</p>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+              <div className="inline-flex rounded-lg bg-violet-500/10 p-2 text-violet-400"><ShieldCheck size={16} /></div>
+              <p className="mt-2 text-sm font-bold text-zinc-100">{protectedBeforePurchase ? 'Protegida' : 'A conferir'}</p>
+              <p className="text-xs text-zinc-500">Mídia antes da compra</p>
+            </div>
+          </div>
+        </div>
+
+        {publication?.products?.length ? (
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {publication.products.slice(0, 6).map((product) => (
+              <div key={product.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm font-semibold text-zinc-200">{product.title}</p>
+                  <span className={product.clientVisible ? 'rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-bold text-emerald-300' : 'rounded-full bg-zinc-800 px-2 py-1 text-[10px] font-bold text-zinc-400'}>
+                    {product.clientVisible ? 'Visível' : 'Oculto'}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-zinc-600">{creatorMediaTypeLabel(product.mediaType)} • {product.priceCredits > 0 ? `${product.priceCredits} créditos` : 'Preço pendente'}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-zinc-800 p-4 text-sm text-zinc-600">
+            Nenhum produto publicado para cliente ainda.
+          </div>
+        )}
+      </section>
+
       {/* Gráfico + Atividade recente */}
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2 rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
           <p className="text-sm font-medium text-zinc-400">
-            Ganhos — <span className="text-zinc-500">{periodoLabel[periodo]}</span>
+            Repasses estimados — <span className="text-zinc-500">{periodoLabel[periodo]}</span>
           </p>
 
           {isLoading ? (
@@ -203,7 +267,7 @@ export function Dashboard() {
                     tick={{ fill: '#52525b', fontSize: 11 }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(v: number) => `R$${v}`}
+                    tickFormatter={(v: number) => `${v} cr`}
                     width={48}
                   />
                   <Tooltip content={<ChartTooltipContent />} />

@@ -1,26 +1,143 @@
-import { MessageCircle, Sparkles, Lock, ArrowLeft, BadgeCheck, Play, Image } from 'lucide-react'
+import { useState } from 'react'
+import { MessageCircle, Sparkles, Lock, ArrowLeft, BadgeCheck, Play, Image, Volume2, Loader2, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import { ClienteLayout } from '@/features/cliente/components/ClienteLayout'
 import { TabLiveAction } from '@/features/cliente/atriz-perfil/components/TabLiveAction'
 import { TabLiveAudio } from '@/features/cliente/atriz-perfil/components/TabLiveAudio'
+import { AudioLiveProtectedPlayer } from '@/features/cliente/atriz-perfil/components/AudioLiveProtectedPlayer'
 import { useAtrizPerfilPage } from '@/features/cliente/atriz-perfil/hooks/useAtrizPerfilPage'
+import type { AudioLivePlayerState } from '@/features/cliente/atriz-perfil/hooks/useAudioLiveClientBridge'
 import { fmt, dataRelativa } from '@/features/cliente/atriz-perfil/utils'
-import type { HistoricoItem } from '@/features/cliente/atriz-perfil/types'
+import type { HistoricoItem, LiveAudioItem } from '@/features/cliente/atriz-perfil/types'
 
 const ASPECT: Record<number, string> = {
   0: 'aspect-[3/4]', 1: 'aspect-square', 2: 'aspect-[4/5]',
   3: 'aspect-[3/4]', 4: 'aspect-[4/3]', 5: 'aspect-[3/4]',
 }
 
+function isHistoricoMediaUrlReady(url?: string | null) {
+  const value = String(url ?? '').trim()
+
+  if (!value) return false
+  if (value === '#') return false
+  if (value.toLowerCase().includes('placeholder')) return false
+  if (value.toLowerCase().includes('simulated-no-r2')) return false
+  if (value.toLowerCase().includes('_simulated')) return false
+
+  return true
+}
+
+function HistoricoMediaFallback({ tipo }: { tipo: HistoricoItem['tipo'] }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-zinc-900 px-3 text-center text-zinc-500">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-zinc-400">
+        {tipo === 'video' ? <Play size={15} className="fill-zinc-400 text-zinc-400" /> : <Image size={15} />}
+      </div>
+      <div>
+        <p className="text-[11px] font-medium text-zinc-300">Mídia em preparação</p>
+        <p className="mt-0.5 text-[10px] leading-snug text-zinc-500">Este item será exibido quando estiver pronto.</p>
+      </div>
+    </div>
+  )
+}
+
+function getHistoricoAudioKey(item: LiveAudioItem) {
+  return String(item.deliveryId || item.protectedViewUrl || item.variantId || item.outputVariantId || item.id || '').trim()
+}
+
+function getHistoricoAudioLiveItems(items?: LiveAudioItem[]) {
+  const seen = new Set<string>()
+  const result: LiveAudioItem[] = []
+
+  for (const item of items || []) {
+    const key = getHistoricoAudioKey(item)
+    if (!key || seen.has(key)) continue
+
+    // Histórico deve mostrar somente Audio Live realmente liberado para o cliente logado.
+    // Item sem rota protegida continua fora do histórico de reprodução.
+    if (item.purchased && item.protectedViewUrl) {
+      seen.add(key)
+      result.push(item)
+    }
+  }
+
+  return result
+}
+
+function ItemHistoricoAudioLive({
+  item,
+  onTocar,
+  player,
+  playingId,
+}: {
+  item: LiveAudioItem
+  onTocar?: (item: LiveAudioItem) => void
+  player?: AudioLivePlayerState
+  playingId?: string | null
+}) {
+  const activeByItem = player?.item?.id === item.id || player?.item?.deliveryId === item.deliveryId
+  const isActive = Boolean(activeByItem || playingId === item.id)
+  const isLoading = isActive && player?.status === 'loading'
+  const isPlaying = isActive && player?.status === 'playing'
+  const isError = isActive && player?.status === 'error'
+
+  return (
+    <button
+      type="button"
+      onClick={() => onTocar?.(item)}
+      className="group relative flex aspect-square flex-col justify-between overflow-hidden rounded-xl border border-pink-500/20 bg-gradient-to-br from-zinc-900 via-zinc-900 to-pink-950/30 p-3 text-left transition hover:border-pink-500/50 hover:bg-zinc-900"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-pink-600/90 text-white shadow-lg shadow-pink-950/30">
+          {isLoading ? <Loader2 size={15} className="animate-spin" /> : <Volume2 size={15} />}
+        </div>
+        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+          Liberado
+        </span>
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-pink-300">Audio Live</p>
+        <p className="mt-1 line-clamp-2 text-xs font-semibold leading-snug text-zinc-100">{item.titulo}</p>
+        <p className="mt-1 text-[10px] text-zinc-500">
+          {isLoading ? 'Abrindo áudio protegido...' : isPlaying ? 'Tocando agora' : isError ? 'Toque para tentar novamente' : 'Ouvir protegido'}
+        </p>
+      </div>
+
+      {isError && (
+        <div className="absolute inset-x-2 bottom-2 flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] text-red-200">
+          <AlertCircle size={11} className="shrink-0" />
+          <span className="truncate">Não abriu agora</span>
+        </div>
+      )}
+    </button>
+  )
+}
+
 function ItemHistorico({ item }: { item: HistoricoItem }) {
+  const [mediaFailed, setMediaFailed] = useState(false)
+  const mediaReady = isHistoricoMediaUrlReady(item.url) && !mediaFailed
+
   return (
     <div className="group relative aspect-square overflow-hidden rounded-xl bg-zinc-800 cursor-pointer">
-      {item.tipo === 'video' ? (
-        <video src={item.url} className="h-full w-full object-cover" muted />
+      {!mediaReady ? (
+        <HistoricoMediaFallback tipo={item.tipo} />
+      ) : item.tipo === 'video' ? (
+        <video
+          src={item.url}
+          className="h-full w-full object-cover"
+          muted
+          onError={() => setMediaFailed(true)}
+        />
       ) : (
-        <img src={item.url} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
+        <img
+          src={item.url}
+          alt=""
+          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          onError={() => setMediaFailed(true)}
+        />
       )}
-      {item.tipo === 'video' && (
+      {item.tipo === 'video' && mediaReady && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60">
             <Play size={13} className="fill-white text-white" />
@@ -49,6 +166,7 @@ export function AtrizPerfilPage() {
   checkingConversation,
   temConversaAtiva,
   handleConversar,
+  audioLiveBridge,
   navigate,
 } = useAtrizPerfilPage()
 
@@ -81,6 +199,9 @@ export function AtrizPerfilPage() {
       </ClienteLayout>
     )
   }
+
+  const historicoAudioLiveItems = getHistoricoAudioLiveItems(atriz.liveAudios)
+  const hasHistoricoContent = atriz.historico.length > 0 || historicoAudioLiveItems.length > 0
 
   return (
     <ClienteLayout>
@@ -304,22 +425,44 @@ export function AtrizPerfilPage() {
 
           {abaDir === 'live_audio' && (
             <div className="flex-1 overflow-hidden p-4">
-              <TabLiveAudio atriz={atriz} />
+              <TabLiveAudio
+                atriz={atriz}
+                onTocar={audioLiveBridge.tocarAudioLive}
+                onComprar={audioLiveBridge.comprarAudioLive}
+                playingId={audioLiveBridge.playingId}
+                purchasingId={audioLiveBridge.purchasingId}
+                player={audioLiveBridge.player}
+              />
             </div>
           )}
 
           {abaDir === 'historico' && (
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="mb-4 flex items-center gap-2 text-zinc-500">
-                <Image size={14} />
-                <span className="text-xs">Conteúdo gerado com essa atriz</span>
+              {/* M4.8G_HISTORY_GALLERY_COPY_ALIGNMENT: Histórico mostra cenas/prévias do perfil; Galeria mostra entregas protegidas. */}
+              <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 px-3 py-2">
+                <div className="flex items-center gap-2 text-zinc-400">
+                  <Image size={14} />
+                  <span className="text-xs font-semibold">Histórico da personagem</span>
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                  Aqui aparecem cenas, prévias e conteúdos ligados ao perfil. Algumas imagens podem ser diferentes da Galeria, que mostra apenas mídias já liberadas para sua conta.
+                </p>
               </div>
-              {atriz.historico.length === 0 ? (
+              {!hasHistoricoContent ? (
                 <div className="flex flex-col items-center gap-2 py-20 text-zinc-600">
                   <p className="text-sm">Nenhum conteúdo gerado ainda.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2 md:grid-cols-4">
+                  {historicoAudioLiveItems.map((item) => (
+                    <ItemHistoricoAudioLive
+                      key={`audio-live-${getHistoricoAudioKey(item)}`}
+                      item={item}
+                      onTocar={audioLiveBridge.tocarAudioLive}
+                      player={audioLiveBridge.player}
+                      playingId={audioLiveBridge.playingId}
+                    />
+                  ))}
                   {atriz.historico.map((item) => (
                     <ItemHistorico key={item.id} item={item} />
                   ))}
@@ -330,6 +473,10 @@ export function AtrizPerfilPage() {
         </div>
 
       </div>
+      <AudioLiveProtectedPlayer
+        player={audioLiveBridge.player}
+        onClose={audioLiveBridge.fecharPlayer}
+      />
     </ClienteLayout>
   )
 }

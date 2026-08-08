@@ -1,0 +1,3155 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Privacy IA — Fábrica Offline API",
+    "version": "4.1.0",
+    "description": "Contrato OpenAPI do núcleo homologado da Fábrica Offline de Imagens. Documento somente de contrato: não altera lógica de negócio. Habilite /api-docs apenas com ENABLE_SWAGGER=true em ambiente controlado."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3334",
+      "description": "Backend local homologado"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Backend local alternativo"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Cliente - Catálogo"
+    },
+    {
+      "name": "Cliente - Claim"
+    },
+    {
+      "name": "Cliente - Biblioteca"
+    },
+    {
+      "name": "Cliente - Visualização Protegida"
+    },
+    {
+      "name": "Admin - Fábrica"
+    },
+    {
+      "name": "Admin - QA"
+    },
+    {
+      "name": "Admin - Concessão"
+    },
+    {
+      "name": "Admin - Visualização Segura"
+    }
+  ],
+  "paths": {
+    "/media/assets/available": {
+      "get": {
+        "tags": [
+          "Cliente - Catálogo"
+        ],
+        "summary": "Lista mídias disponíveis no catálogo do usuário autenticado",
+        "description": "Retorna assets em status available, com estoque remanescente e preço configurado. Exige Bearer JWT.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "companionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "842db1db-ccfe-4206-8d08-ec63b489b0d6"
+            },
+            "description": "Filtra por companion/atriz."
+          },
+          {
+            "name": "mediaType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "imagem"
+            },
+            "description": "Filtra por tipo de mídia."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "description": "Quantidade máxima de itens retornados."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset para paginação."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogListData"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Perfil autenticado obrigatório para listar mídias disponíveis.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Perfil autenticado obrigatório para listar mídias disponíveis.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao listar mídias disponíveis.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao listar mídias disponíveis.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/media/assets/{assetId}/claim": {
+      "post": {
+        "tags": [
+          "Cliente - Claim"
+        ],
+        "summary": "Realiza claim pago de um asset disponível",
+        "description": "Executa claim pago com débito de créditos, ledger, entrega controlada e galeria. Retorna 200 quando já entregue por idempotência ou 201 quando cria entrega.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset/variant em media_asset_variants."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimAssetRequest"
+              },
+              "example": {
+                "deliverySource": "button"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ClaimResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ClaimResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parâmetro inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Parâmetro inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Perfil autenticado obrigatório para claim pago de mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Perfil autenticado obrigatório para claim pago de mídia.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Assinatura ativa obrigatória para receber esta mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Assinatura ativa obrigatória para receber esta mídia.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Preço da mídia não configurado ou créditos insuficientes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Preço da mídia não configurado ou créditos insuficientes.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao executar claim pago da mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao executar claim pago da mídia.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/media/deliveries": {
+      "get": {
+        "tags": [
+          "Cliente - Biblioteca"
+        ],
+        "summary": "Lista entregas/biblioteca do usuário autenticado",
+        "description": "Retorna mídias entregues ao perfil autenticado, incluindo protectedViewUrl, pricing, companion, combination, asset e galleryItem.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "companionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "842db1db-ccfe-4206-8d08-ec63b489b0d6"
+            },
+            "description": "Filtra por companion/atriz."
+          },
+          {
+            "name": "mediaType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "imagem"
+            },
+            "description": "Filtra por tipo de mídia."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "description": "Quantidade máxima de itens retornados."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset para paginação."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DeliveryListData"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Perfil autenticado obrigatório para listar entregas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Perfil autenticado obrigatório para listar entregas.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao listar entregas de mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao listar entregas de mídia.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/media/deliveries/{deliveryId}/protected-view": {
+      "get": {
+        "tags": [
+          "Cliente - Visualização Protegida"
+        ],
+        "summary": "Entrega mídia protegida vinculada ao usuário",
+        "description": "Stream/proxy protegido da entrega do usuário autenticado. Suporta Range quando aplicável e aplica proteção/watermark/fingerprint conforme serviço.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deliveryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID de user_media_deliveries."
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "bytes=0-1023"
+            },
+            "description": "Range HTTP opcional."
+          },
+          {
+            "name": "expiresIn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 120,
+              "minimum": 30,
+              "maximum": 300
+            },
+            "description": "TTL interno da URL assinada."
+          },
+          {
+            "name": "watermarkLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "PRIVACY IA"
+            },
+            "description": "Texto da watermark dinâmica."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo binário",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Conteúdo parcial",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "deliveryId obrigatório.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "deliveryId obrigatório.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Perfil autenticado obrigatório.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Perfil autenticado obrigatório.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entrega não encontrada para este usuário.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Entrega não encontrada para este usuário.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Asset não está disponível para visualização protegida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não está disponível para visualização protegida.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao buscar entrega de mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao buscar entrega de mídia.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/summary": {
+      "get": {
+        "tags": [
+          "Admin - Fábrica"
+        ],
+        "summary": "Resumo administrativo da Fábrica Offline",
+        "description": "Retorna contadores de assets, batches, deliveries e flags de health. Exige role administrativo.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FactorySummary"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao calcular resumo administrativo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao calcular resumo administrativo.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/assets": {
+      "get": {
+        "tags": [
+          "Admin - Fábrica"
+        ],
+        "summary": "Lista assets administrativos da Fábrica Offline",
+        "description": "Lista assets/variants com status, R2, preço, batch, companion, combination e paginação.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "qa_pending"
+            },
+            "description": "Filtra por status."
+          },
+          {
+            "name": "mediaType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "imagem"
+            },
+            "description": "Filtra por tipo de mídia."
+          },
+          {
+            "name": "companionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "842db1db-ccfe-4206-8d08-ec63b489b0d6"
+            },
+            "description": "Filtra por companion/atriz."
+          },
+          {
+            "name": "combinationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "960543a2-6d82-48c9-8bab-030aa9840412"
+            },
+            "description": "Filtra por combinação."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "description": "Quantidade máxima de itens retornados."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset para paginação."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminAssetListData"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao listar assets da fábrica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao listar assets da fábrica.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/assets/{assetId}/grant": {
+      "post": {
+        "tags": [
+          "Admin - Concessão"
+        ],
+        "summary": "Concede asset a um perfil sem cobrança",
+        "description": "Rota administrativa para concessão sem cobrança. Exige adminMiddleware, cria entrega/galeria sem débito e registra admin_audit_logs.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset/variant a conceder."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGrantRequest"
+              },
+              "example": {
+                "targetProfileId": "703a4f61-8170-4c4e-a1d5-b7a23d6567e5",
+                "deliverySource": "admin_grant"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminGrantResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminGrantResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "targetProfileId/profileId obrigatório para concessão de mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "targetProfileId/profileId obrigatório para concessão de mídia.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrador autenticado obrigatório para concessão de mídia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Administrador autenticado obrigatório para concessão de mídia.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Asset indisponível para concessão.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset indisponível para concessão.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Falha ao registrar auditoria administrativa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Falha ao registrar auditoria administrativa.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/batches": {
+      "get": {
+        "tags": [
+          "Admin - Fábrica"
+        ],
+        "summary": "Lista batches da Fábrica Offline",
+        "description": "Lista lotes de geração com status, contadores e metadata.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "qa_pending"
+            },
+            "description": "Filtra por status."
+          },
+          {
+            "name": "companionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "842db1db-ccfe-4206-8d08-ec63b489b0d6"
+            },
+            "description": "Filtra por companion/atriz."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "description": "Quantidade máxima de itens retornados."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset para paginação."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/BatchListData"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao listar batches da fábrica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao listar batches da fábrica.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/batches/{batchId}/items": {
+      "get": {
+        "tags": [
+          "Admin - Fábrica"
+        ],
+        "summary": "Lista itens filhos de um batch",
+        "description": "Lista media_generation_batch_items vinculados ao batch informado.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID de media_generation_batches."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "qa_pending"
+            },
+            "description": "Filtra por status."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "Quantidade máxima de itens."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset para paginação."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/BatchItemListData"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "batchId obrigatório.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "batchId obrigatório.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao listar itens do batch da fábrica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao listar itens do batch da fábrica.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/deliveries": {
+      "get": {
+        "tags": [
+          "Admin - Fábrica"
+        ],
+        "summary": "Lista entregas administrativas",
+        "description": "Lista user_media_deliveries para visão administrativa, com filtros por perfil, companion e tipo de mídia.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "c87fd7bb-57d4-4ac9-a5af-9d72cf393245"
+            },
+            "description": "Filtra por profile."
+          },
+          {
+            "name": "companionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "842db1db-ccfe-4206-8d08-ec63b489b0d6"
+            },
+            "description": "Filtra por companion/atriz."
+          },
+          {
+            "name": "mediaType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "imagem"
+            },
+            "description": "Filtra por tipo de mídia."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            },
+            "description": "Quantidade máxima de itens retornados."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset para paginação."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminDeliveryListData"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao listar entregas administrativas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao listar entregas administrativas.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/qa/{assetId}/approve": {
+      "post": {
+        "tags": [
+          "Admin - QA"
+        ],
+        "summary": "Aprova asset em qa_pending",
+        "description": "Publica o asset como available, recalcula batch/batch_item e registra auditoria.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset em qa_pending."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveAssetRequest"
+              },
+              "example": {
+                "notes": "Aprovado visualmente pelo QA."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/QaResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "assetId obrigatório.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "assetId obrigatório.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Perfil administrador autenticado obrigatório para curadoria.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Perfil administrador autenticado obrigatório para curadoria.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado para curadoria.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado para curadoria.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Somente assets em qa_pending podem ser aprovados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Somente assets em qa_pending podem ser aprovados.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao atualizar asset na curadoria.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao atualizar asset na curadoria.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/factory/qa/{assetId}/reject": {
+      "post": {
+        "tags": [
+          "Admin - QA"
+        ],
+        "summary": "Rejeita asset em qa_pending",
+        "description": "Marca asset como rejected, define cleanup_after, recalcula batch/batch_item e registra auditoria.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset em qa_pending."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectAssetRequest"
+              },
+              "example": {
+                "reason": "Artefato visual incompatível com o padrão aprovado."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/QaResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Motivo da rejeição é obrigatório.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Motivo da rejeição é obrigatório.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Perfil administrador autenticado obrigatório para curadoria.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Perfil administrador autenticado obrigatório para curadoria.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado para curadoria.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado para curadoria.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Somente assets em qa_pending podem ser rejeitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Somente assets em qa_pending podem ser rejeitados.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro ao atualizar asset na curadoria.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro ao atualizar asset na curadoria.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/media/assets/{assetId}/secure-preview": {
+      "post": {
+        "tags": [
+          "Admin - Visualização Segura"
+        ],
+        "summary": "Cria preview assinado temporário de asset",
+        "description": "Retorna URL assinada temporária e política de proteção para preview administrativo.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset/variant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SecurePreviewResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado para acesso seguro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado para acesso seguro.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Asset não está em status permitido para acesso seguro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não está em status permitido para acesso seguro.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro no acesso seguro ao asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro no acesso seguro ao asset.",
+                  "details": null
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurePreviewRequest"
+              },
+              "example": {
+                "expiresIn": 120
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/media/assets/{assetId}/proxy-preview": {
+      "get": {
+        "tags": [
+          "Admin - Visualização Segura"
+        ],
+        "summary": "Proxy seguro para preview administrativo",
+        "description": "Entrega conteúdo por proxy backend com headers anti-cache/anti-embed.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset/variant."
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "bytes=0-1023"
+            },
+            "description": "Range HTTP opcional."
+          },
+          {
+            "name": "expiresIn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 120,
+              "minimum": 30,
+              "maximum": 300
+            },
+            "description": "TTL interno."
+          },
+          {
+            "name": "watermarkLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "PRIVACY IA"
+            },
+            "description": "Texto da watermark."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo binário",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado para acesso seguro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado para acesso seguro.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Asset não está em status permitido para acesso seguro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não está em status permitido para acesso seguro.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro no acesso seguro ao asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro no acesso seguro ao asset.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/media/assets/{assetId}/protected-view": {
+      "get": {
+        "tags": [
+          "Admin - Visualização Segura"
+        ],
+        "summary": "Visualização protegida administrativa",
+        "description": "Entrega asset via payload protegido, com watermark/fingerprint/audit quando aplicável.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+            },
+            "description": "ID do asset/variant."
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "bytes=0-1023"
+            },
+            "description": "Range HTTP opcional."
+          },
+          {
+            "name": "expiresIn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 120,
+              "minimum": 30,
+              "maximum": 300
+            },
+            "description": "TTL interno."
+          },
+          {
+            "name": "watermarkLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "PRIVACY IA"
+            },
+            "description": "Texto da watermark."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conteúdo binário",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token ausente ou inválido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Token ausente ou inválido.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Acesso restrito ao administrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Acesso restrito ao administrador.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset não encontrado para acesso seguro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não encontrado para acesso seguro.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Asset não está em status permitido para acesso seguro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Asset não está em status permitido para acesso seguro.",
+                  "details": null
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro no acesso seguro ao asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Erro no acesso seguro ao asset.",
+                  "details": null
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Authorization: Bearer <token>"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "nullable": true
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "example": 30
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          },
+          "returned": {
+            "type": "integer",
+            "example": 1
+          },
+          "hasMore": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "CompanionSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "842db1db-ccfe-4206-8d08-ec63b489b0d6"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "example": "Sofia Lane"
+          },
+          "slug": {
+            "type": "string",
+            "nullable": true,
+            "example": "sofia-lane"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CombinationSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "960543a2-6d82-48c9-8bab-030aa9840412"
+          },
+          "key": {
+            "type": "string",
+            "nullable": true,
+            "example": "factory_test_1781658862432"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "example": "Factory Test Combination"
+          },
+          "mediaType": {
+            "type": "string",
+            "nullable": true,
+            "example": "imagem"
+          },
+          "priceCredits": {
+            "type": "integer",
+            "example": 30
+          }
+        }
+      },
+      "Availability": {
+        "type": "object",
+        "properties": {
+          "currentAssignments": {
+            "type": "integer",
+            "example": 0
+          },
+          "maxAssignments": {
+            "type": "integer",
+            "example": 1
+          },
+          "remainingAssignments": {
+            "type": "integer",
+            "example": 1
+          },
+          "stockAvailable": {
+            "type": "boolean",
+            "example": true
+          },
+          "claimable": {
+            "type": "boolean",
+            "example": true
+          },
+          "requiresPricing": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "Price": {
+        "type": "object",
+        "properties": {
+          "credits": {
+            "type": "integer",
+            "example": 30
+          },
+          "isConfigured": {
+            "type": "boolean",
+            "example": true
+          },
+          "purchaseReady": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "CatalogAssetItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "mediaType": {
+            "type": "string",
+            "example": "imagem"
+          },
+          "status": {
+            "type": "string",
+            "example": "available"
+          },
+          "variantNumber": {
+            "type": "integer",
+            "example": 1
+          },
+          "qualityScore": {
+            "type": "number",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Price"
+          },
+          "companion": {
+            "$ref": "#/components/schemas/CompanionSummary"
+          },
+          "combination": {
+            "$ref": "#/components/schemas/CombinationSummary"
+          }
+        }
+      },
+      "CatalogListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogAssetItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "DeliveryPricing": {
+        "type": "object",
+        "properties": {
+          "totalPriceCredits": {
+            "type": "integer",
+            "example": 30
+          },
+          "companionCreditsUsed": {
+            "type": "integer",
+            "example": 0
+          },
+          "universalCreditsUsed": {
+            "type": "integer",
+            "example": 30
+          },
+          "universalCreditLedgerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "companionCreditLedgerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "DeliveryAssetSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "mediaType": {
+            "type": "string",
+            "example": "imagem"
+          },
+          "status": {
+            "type": "string",
+            "example": "sold"
+          },
+          "variantNumber": {
+            "type": "integer",
+            "example": 1
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "GalleryItemSummary": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "mediaUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "DeliveryItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deliverySource": {
+            "type": "string",
+            "nullable": true,
+            "example": "button"
+          },
+          "protectedViewUrl": {
+            "type": "string",
+            "example": "/media/deliveries/{deliveryId}/protected-view"
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/DeliveryPricing"
+          },
+          "asset": {
+            "$ref": "#/components/schemas/DeliveryAssetSummary"
+          },
+          "companion": {
+            "$ref": "#/components/schemas/CompanionSummary"
+          },
+          "combination": {
+            "$ref": "#/components/schemas/CombinationSummary"
+          },
+          "galleryItem": {
+            "$ref": "#/components/schemas/GalleryItemSummary"
+          }
+        }
+      },
+      "DeliveryListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "ClaimAssetRequest": {
+        "type": "object",
+        "properties": {
+          "deliverySource": {
+            "type": "string",
+            "enum": [
+              "button",
+              "album",
+              "chat",
+              "admin_grant",
+              "premium_studio"
+            ],
+            "default": "button"
+          }
+        }
+      },
+      "ClaimResult": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "deliveryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "priceCredits": {
+            "type": "integer",
+            "example": 30
+          },
+          "companionCreditsUsed": {
+            "type": "integer",
+            "example": 0
+          },
+          "universalCreditsUsed": {
+            "type": "integer",
+            "example": 30
+          },
+          "protectedViewUrl": {
+            "type": "string"
+          },
+          "alreadyDelivered": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FactorySummary": {
+        "type": "object",
+        "properties": {
+          "assets": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "example": 6
+              },
+              "qaPending": {
+                "type": "integer",
+                "example": 1
+              },
+              "available": {
+                "type": "integer",
+                "example": 1
+              },
+              "sold": {
+                "type": "integer",
+                "example": 2
+              },
+              "rejected": {
+                "type": "integer",
+                "example": 2
+              },
+              "unpricedAvailable": {
+                "type": "integer",
+                "example": 0
+              }
+            }
+          },
+          "batches": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "example": 15
+              },
+              "running": {
+                "type": "integer",
+                "example": 0
+              },
+              "completed": {
+                "type": "integer",
+                "example": 5
+              }
+            }
+          },
+          "deliveries": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "example": 2
+              }
+            }
+          },
+          "health": {
+            "type": "object",
+            "properties": {
+              "hasQaBacklog": {
+                "type": "boolean",
+                "example": true
+              },
+              "hasAvailableStock": {
+                "type": "boolean",
+                "example": true
+              },
+              "hasUnpricedAvailableStock": {
+                "type": "boolean",
+                "example": false
+              }
+            }
+          }
+        }
+      },
+      "Assignments": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "integer",
+            "example": 0
+          },
+          "max": {
+            "type": "integer",
+            "example": 1
+          },
+          "remaining": {
+            "type": "integer",
+            "example": 1
+          },
+          "stockAvailable": {
+            "type": "boolean"
+          },
+          "soldOut": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AdminAssetItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "status": {
+            "type": "string",
+            "example": "qa_pending"
+          },
+          "mediaType": {
+            "type": "string",
+            "example": "imagem"
+          },
+          "variantNumber": {
+            "type": "integer",
+            "example": 1
+          },
+          "r2Bucket": {
+            "type": "string",
+            "example": "privacy-media"
+          },
+          "r2Key": {
+            "type": "string"
+          },
+          "thumbnailR2Key": {
+            "type": "string",
+            "nullable": true
+          },
+          "previewR2Key": {
+            "type": "string",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cleanupAfter": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rejectionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignments": {
+            "$ref": "#/components/schemas/Assignments"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Price"
+          },
+          "batch": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              },
+              "itemId": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              }
+            }
+          },
+          "companion": {
+            "$ref": "#/components/schemas/CompanionSummary"
+          },
+          "combination": {
+            "$ref": "#/components/schemas/CombinationSummary"
+          }
+        }
+      },
+      "AdminAssetListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAssetItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "Batch": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "companionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "example": "completed"
+          },
+          "batchType": {
+            "type": "string",
+            "nullable": true,
+            "example": "factory"
+          },
+          "requestedCount": {
+            "type": "integer"
+          },
+          "generatedCount": {
+            "type": "integer"
+          },
+          "approvedCount": {
+            "type": "integer"
+          },
+          "rejectedCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "BatchItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "combinationId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "status": {
+            "type": "string",
+            "example": "completed"
+          },
+          "requestedVariants": {
+            "type": "integer"
+          },
+          "generatedVariants": {
+            "type": "integer"
+          },
+          "approvedVariants": {
+            "type": "integer"
+          },
+          "rejectedVariants": {
+            "type": "integer"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "BatchListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Batch"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "BatchItemListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "AdminDeliveryProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "nullable": true,
+            "example": "cliente"
+          }
+        }
+      },
+      "AdminDeliveryItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DeliveryItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "profileId": {
+                "type": "string",
+                "format": "uuid",
+                "example": "053e8c5b-2bea-4858-ba3b-8f154f3e88cf"
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "nullable": true
+              },
+              "profile": {
+                "$ref": "#/components/schemas/AdminDeliveryProfile"
+              }
+            }
+          }
+        ]
+      },
+      "AdminDeliveryListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDeliveryItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "AdminGrantRequest": {
+        "type": "object",
+        "properties": {
+          "targetProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deliverySource": {
+            "type": "string",
+            "default": "admin_grant"
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "targetProfileId"
+            ]
+          },
+          {
+            "required": [
+              "profileId"
+            ]
+          }
+        ]
+      },
+      "AdminGrantResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClaimResult"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "grantedByProfileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "targetProfileId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "auditLog": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": true
+              }
+            }
+          }
+        ]
+      },
+      "ApproveAssetRequest": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "observacao": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RejectAssetRequest": {
+        "type": "object",
+        "description": "Ao menos um campo de motivo precisa ser informado.",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "rejectionReason": {
+            "type": "string"
+          },
+          "motivo": {
+            "type": "string"
+          },
+          "observacao": {
+            "type": "string"
+          }
+        }
+      },
+      "QaResult": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "type": "string",
+            "example": "approve"
+          },
+          "asset": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "batchItem": {
+            "nullable": true
+          },
+          "batch": {
+            "nullable": true
+          },
+          "auditLog": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          }
+        }
+      },
+      "SecurePreviewRequest": {
+        "type": "object",
+        "properties": {
+          "expiresIn": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 300,
+            "default": 120
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 300
+          }
+        }
+      },
+      "SecurePreviewResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "asset": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "access": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "example": "signed_r2_read_url"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "expiresIn": {
+                "type": "integer"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "protection": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

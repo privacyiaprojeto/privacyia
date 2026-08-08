@@ -1,4 +1,4 @@
-import { X, Wallet, Coins, ArrowDownCircle, Loader2, CheckCircle, Landmark, QrCode } from 'lucide-react'
+import { X, Wallet, Coins, Loader2, CheckCircle, Landmark, QrCode } from 'lucide-react'
 import type { SaldoAtriz, MetodoRecebimento } from '@/features/atriz/financeiro/types'
 
 interface Props {

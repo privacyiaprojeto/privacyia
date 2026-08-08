@@ -1,17 +1,21 @@
-import { useState, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { OpcaoVideo, TipoOpcaoVideo } from '@/features/cliente/nsfw/gerar-video/types'
 
-const TABS: { key: TipoOpcaoVideo; label: string }[] = [
-  { key: 'roupa', label: 'Roupa' },
-  { key: 'acao', label: 'Ação' },
-  { key: 'localizacao', label: 'Cenário' },
-]
+const LABELS_FIXOS: Record<string, string> = {
+  roupa: 'Roupa',
+  acao: 'Ação',
+  localizacao: 'Cenário',
+}
 
 interface SeletorOpcoesVideoProps {
   opcoes: OpcaoVideo[]
   selecionadas: Record<TipoOpcaoVideo, string | null>
   onToggle: (categoria: TipoOpcaoVideo, id: string) => void
+}
+
+function getCategoriaLabel(opcao: OpcaoVideo) {
+  return opcao.categoriaLabel || opcao.titleName || LABELS_FIXOS[opcao.categoria] || opcao.categoria
 }
 
 function CardVideo({ opcao, selecionada, onToggle }: {
@@ -101,18 +105,46 @@ function CardVideo({ opcao, selecionada, onToggle }: {
 }
 
 export function SeletorOpcoesVideo({ opcoes, selecionadas, onToggle }: SeletorOpcoesVideoProps) {
-  const [tabAtiva, setTabAtiva] = useState<TipoOpcaoVideo>('roupa')
+  const tabs = useMemo(() => {
+    const map = new Map<TipoOpcaoVideo, string>()
+
+    for (const opcao of opcoes) {
+      if (!map.has(opcao.categoria)) {
+        map.set(opcao.categoria, getCategoriaLabel(opcao))
+      }
+    }
+
+    return Array.from(map.entries()).map(([key, label]) => ({ key, label }))
+  }, [opcoes])
+
+  const [tabAtiva, setTabAtiva] = useState<TipoOpcaoVideo>(tabs[0]?.key || 'roupa')
+
+  useEffect(() => {
+    if (tabs.length === 0) return
+    if (!tabs.some((tab) => tab.key === tabAtiva)) {
+      setTabAtiva(tabs[0].key)
+    }
+  }, [tabs, tabAtiva])
+
   const opcoesDaTab = opcoes.filter((o) => o.categoria === tabAtiva)
+
+  if (tabs.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-4 text-xs text-zinc-400">
+        Nenhuma opção foi liberada para este avatar ainda.
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 rounded-xl bg-zinc-800/60 p-1">
-        {TABS.map((tab) => (
+      <div className="flex gap-1 overflow-x-auto rounded-xl bg-zinc-800/60 p-1 scrollbar-none">
+        {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setTabAtiva(tab.key)}
             className={clsx(
-              'flex-1 rounded-lg py-1.5 text-xs font-medium transition',
+              'min-w-[5.5rem] flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition',
               tabAtiva === tab.key
                 ? 'bg-violet-600 text-white'
                 : 'text-zinc-400 hover:text-zinc-200',

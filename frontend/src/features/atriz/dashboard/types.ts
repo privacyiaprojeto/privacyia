@@ -23,8 +23,32 @@ export interface AtividadeItem {
   criadaEm: string
 }
 
+
+export interface DashboardPublicationProduct {
+  id: string
+  title: string
+  mediaType: string
+  status: string
+  clientVisible: boolean
+  actorVisible: boolean
+  priceCredits: number
+  updatedAt?: string | null
+}
+
+export interface DashboardPublicationSummary {
+  ok: boolean
+  publishedProducts: number
+  hiddenProducts: number
+  pendingProducts: number
+  products: DashboardPublicationProduct[]
+  clientMediaVisibleBeforePurchase: boolean
+  protectedDeliveryOnly: boolean
+  error?: string | null
+}
+
 export interface DashboardData {
   resumo: DashboardResumo
   grafico: GraficoPonto[]
   atividades: AtividadeItem[]
+  publication?: DashboardPublicationSummary
 }

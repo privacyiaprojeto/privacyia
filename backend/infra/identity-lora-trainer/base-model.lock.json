@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "privacy-identity-base-model-lock-v1",
+  "repository": "Wan-AI/Wan2.1-VACE-14B",
+  "revision": "539c162b1387eac9dc4c20bd3f74671309e76a4c",
+  "resolvedFrom": "main",
+  "generatedAt": "2026-07-22T13:37:00.068Z",
+  "source": {
+    "provider": "huggingface_hub",
+    "metadataEndpoint": "https://huggingface.co/api/models/Wan-AI/Wan2.1-VACE-14B/revision/main?blobs=true",
+    "metadataOnly": true,
+    "modelWeightsDownloaded": false
+  },
+  "trainingContract": {
+    "engine": "DiffSynth-Studio",
+    "engineCommit": "fb337fb",
+    "officialScript": "examples/wanvideo/model_training/lora/Wan2.1-VACE-14B.sh",
+    "artifactSelector": "diffusion_pytorch_model*.safetensors + models_t5_umt5-xxl-enc-bf16.pth + Wan2.1_VAE.pth"
+  },
+  "artifacts": [
+    {
+      "path": "diffusion_pytorch_model-00001-of-00007.safetensors",
+      "sha256": "569d54a07279b89f8281421fccf27ee2459ea853ce6845d3536b8664b0070078",
+      "size": 9887603256
+    },
+    {
+      "path": "diffusion_pytorch_model-00002-of-00007.safetensors",
+      "sha256": "b17ff172f262b4da91c31e8c46d3b7707f62cecfff6e18dd0072ab29eb350e46",
+      "size": 9839059648
+    },
+    {
+      "path": "diffusion_pytorch_model-00003-of-00007.safetensors",
+      "sha256": "741fd1508cd0288f0bb0f4fb3df6734da521d5ff23746170c848564a367e2cea",
+      "size": 9839059744
+    },
+    {
+      "path": "diffusion_pytorch_model-00004-of-00007.safetensors",
+      "sha256": "47b08ba289b127fc64979bc877ee07e1c87aeb8eb8cd47bcfd112682847981ba",
+      "size": 9839059744
+    },
+    {
+      "path": "diffusion_pytorch_model-00005-of-00007.safetensors",
+      "sha256": "29e35f4cf0e3a61f4726c960f1babf71d65677a8c99fe704257d665c9498ee88",
+      "size": 9839059744
+    },
+    {
+      "path": "diffusion_pytorch_model-00006-of-00007.safetensors",
+      "sha256": "91ac087a40b814331e87f5f015af11ba999275d48d2af49591b6bf7727d3c146",
+      "size": 7910235256
+    },
+    {
+      "path": "diffusion_pytorch_model-00007-of-00007.safetensors",
+      "sha256": "d2c107015cdef963cb8f9b7006330e7d7355ca648d90af32bcf80ed76d8eba1f",
+      "size": 6098227760
+    },
+    {
+      "path": "models_t5_umt5-xxl-enc-bf16.pth",
+      "sha256": "7cace0da2b446bbbbc57d031ab6cf163a3d59b366da94e5afe36745b746fd81d",
+      "size": 11361920418
+    },
+    {
+      "path": "Wan2.1_VAE.pth",
+      "sha256": "38071ab59bd94681c686fa51d75a1968f64e470262043be31f7a094e442fd981",
+      "size": 507609880
+    }
+  ],
+  "fingerprintSha256": "7a6f4122f150e4c3518c375da935f349070d7d3ed6619fa8c19ca26d27c4799a"
+}

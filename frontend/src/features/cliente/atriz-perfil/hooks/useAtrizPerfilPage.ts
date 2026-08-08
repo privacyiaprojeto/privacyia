@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { useAtrizPerfilPublico } from '@/features/cliente/atriz-perfil/hooks/useAtrizPerfilPublico'
+import { useAudioLiveClientBridge } from '@/features/cliente/atriz-perfil/hooks/useAudioLiveClientBridge'
 import { useFeedPosts } from '@/features/cliente/feed/hooks/useFeedPosts'
 import { getConversas } from '@/features/cliente/chat/api/getConversas'
 import { startConversation } from '@/features/cliente/chat/api/startConversation'
@@ -56,6 +57,7 @@ export function useAtrizPerfilPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { data: atriz, isLoading, isError } = useAtrizPerfilPublico(atrizParam)
+  const audioLiveBridge = useAudioLiveClientBridge(atriz)
   const { data: feedPosts = [] } = useFeedPosts()
 
   const [abaEsq, setAbaEsq] = useState<AbaEsq>('sobre')
@@ -162,7 +164,7 @@ navigate(`/cliente/chat/${conversaNormalizada.id}`, {
   }
 
   return {
-    atriz,
+    atriz: audioLiveBridge.atriz,
     isLoading,
     isError,
     abaEsq,
@@ -176,6 +178,7 @@ navigate(`/cliente/chat/${conversaNormalizada.id}`, {
     conversaAtivaId,
     temConversaAtiva: Boolean(conversaAtivaId),
     handleConversar,
+    audioLiveBridge,
     navigate,
   }
 }

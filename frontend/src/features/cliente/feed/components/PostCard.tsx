@@ -15,9 +15,16 @@ export function PostCard({ post }: PostCardProps) {
   return (
     <article className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
       <PostHeader atriz={post.atriz} />
-      <PostMedia tipo={post.tipo} url={post.url} nome={post.atriz.nome} />
+      <PostMedia
+        tipo={post.tipo}
+        url={post.url}
+        nome={post.atriz.nome}
+        mediaStatus={post.mediaStatus}
+        streamKind={post.streamKind}
+        mediaMessage={post.mediaMessage}
+      />
       <div className="px-3 py-2">
-        <PostBannerStrip atriz={post.atriz} />
+        <PostBannerStrip post={post} />
       </div>
       <PostActions
         atrizSlug={post.atriz.slug}

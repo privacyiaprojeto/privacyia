@@ -22,6 +22,24 @@ function toSlug(value: string) {
     .replace(/(^-|-$)/g, '')
 }
 
+
+function isInternalTestAvatar(raw: RawAtriz) {
+  const text = [raw.nome, raw.name, raw.slug, raw.id]
+    .map((value) => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    text.includes('avatar teste') ||
+    text.includes('avatar-teste') ||
+    text.includes('teste 6.0') ||
+    text.includes('teste-6-0') ||
+    text.includes('teste_6_0') ||
+    text.includes('sprint 6.0') ||
+    text.includes('sprint-6-0')
+  )
+}
+
 function normalizeAtriz(raw: RawAtriz): Atriz {
   const id = String(raw.id)
   const nome = raw.nome ?? raw.name ?? 'Criadora'
@@ -47,7 +65,22 @@ function normalizeAtriz(raw: RawAtriz): Atriz {
   }
 }
 
+function unwrapAtrizes(raw: unknown): RawAtriz[] {
+  if (Array.isArray(raw)) return raw as RawAtriz[]
+
+  if (raw && typeof raw === 'object') {
+    const envelope = raw as { data?: unknown; items?: unknown; results?: unknown }
+    if (Array.isArray(envelope.data)) return envelope.data as RawAtriz[]
+    if (Array.isArray(envelope.items)) return envelope.items as RawAtriz[]
+    if (Array.isArray(envelope.results)) return envelope.results as RawAtriz[]
+  }
+
+  return []
+}
+
 export async function getAtrizes(): Promise<Atriz[]> {
-  const { data } = await api.get<RawAtriz[]>('/atrizes')
-  return Array.isArray(data) ? data.map(normalizeAtriz) : []
+  const { data } = await api.get<unknown>('/atrizes')
+  return unwrapAtrizes(data)
+    .filter((item) => !isInternalTestAvatar(item))
+    .map(normalizeAtriz)
 }

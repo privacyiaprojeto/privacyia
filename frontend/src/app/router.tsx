@@ -12,13 +12,15 @@ import { Carteira } from '@/features/cliente/carteira'
 import { Perfil } from '@/features/cliente/perfil'
 import { AtrizPerfilPage } from '@/features/cliente/atriz-perfil'
 import { AtrizLayout } from '@/features/atriz'
-import { Dashboard } from '@/features/atriz/dashboard'
+import { AtrizDashboard } from '@/features/atriz/pages/AtrizDashboard'
+import { MappingVaultPage } from '@/features/atriz/creator/pages/MappingVaultPage'
+import { ProductsPage } from '@/features/atriz/creator/pages/ProductsPage'
 import { Financeiro } from '@/features/atriz/financeiro'
-import { Galeria as GaleriaAtriz } from '@/features/atriz/galeria'
-import { Assinantes } from '@/features/atriz/assinantes'
 import { Notificacoes as NotificacoesAtriz } from '@/features/atriz/notificacoes'
 import { Configuracoes } from '@/features/atriz/configuracoes'
+import { Suporte } from '@/features/atriz/configuracoes/pages/Suporte'
 import { AdmDashboard } from '@/features/adm'
+import { ActorOnboardingPage } from '@/features/actor-onboarding'
 import { useAuthStore } from '@/shared/stores/useAuthStore'
 import type { UserRole } from '@/shared/types/user'
 
@@ -57,6 +59,7 @@ export function Router() {
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/sign-up" element={<SignUp />} />
+        <Route path="/atores/onboarding/:inviteToken" element={<ActorOnboardingPage />} />
 
         {/* Cliente */}
         <Route element={<RouteGuard allowedRoles={['cliente']} />}>
@@ -77,12 +80,13 @@ export function Router() {
         {/* Atriz */}
         <Route element={<RouteGuard allowedRoles={['atriz']} />}>
           <Route path="/atriz" element={<AtrizLayout />}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<AtrizDashboard />} />
+            <Route path="mapeamento" element={<MappingVaultPage />} />
+            <Route path="produtos" element={<ProductsPage />} />
             <Route path="financeiro" element={<Financeiro />} />
-            <Route path="galeria" element={<GaleriaAtriz />} />
-            <Route path="assinantes" element={<Assinantes />} />
             <Route path="notificacoes" element={<NotificacoesAtriz />} />
             <Route path="configuracoes" element={<Configuracoes />} />
+            <Route path="suporte" element={<Suporte />} />
           </Route>
         </Route>
 

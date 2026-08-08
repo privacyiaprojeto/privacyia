@@ -19,7 +19,11 @@ export function Descobrir() {
     novosCriadores,
     rumoAoTopo,
     recentes,
+    isLoading,
+    isError,
   } = useDescobrir()
+
+  const hasCreators = topCreators.length > 0
 
   return (
     <ClienteLayout>
@@ -43,10 +47,27 @@ export function Descobrir() {
 
         {tab === 'descobrir' && (
           <div className="flex flex-col pb-4">
-            <TopCreators atrizes={topCreators} />
-            <BombandoNoChat atrizes={bombandoNoChat} />
-            <NovosCriadores atrizes={novosCriadores} />
-            <RumoAoTopo atrizes={rumoAoTopo} />
+            {isLoading ? (
+              <div className="grid grid-cols-2 gap-3 px-4 py-6 md:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <div key={index} className="aspect-[3/4] animate-pulse rounded-xl bg-zinc-900" />
+                ))}
+              </div>
+            ) : !hasCreators ? (
+              <div className="mx-4 mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 px-4 py-10 text-center">
+                <p className="text-sm font-semibold text-zinc-300">Nenhuma criadora disponível agora.</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {isError ? 'Não foi possível atualizar a vitrine neste momento.' : 'Novos perfis aparecerão quando tiverem produtos publicados.'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <TopCreators atrizes={topCreators} />
+                <BombandoNoChat atrizes={bombandoNoChat} />
+                <NovosCriadores atrizes={novosCriadores} />
+                <RumoAoTopo atrizes={rumoAoTopo} />
+              </>
+            )}
           </div>
         )}
 
@@ -59,7 +80,13 @@ export function Descobrir() {
               onChange={(e) => setBusca(e.target.value)}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-violet-500"
             />
-            {busca.trim() ? (
+            {isLoading ? (
+              <div className="grid grid-cols-3 gap-2">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div key={index} className="h-24 animate-pulse rounded-xl bg-zinc-900" />
+                ))}
+              </div>
+            ) : busca.trim() ? (
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-semibold text-zinc-400">Resultados</p>
                 <div className="grid grid-cols-3 gap-2">
@@ -67,6 +94,9 @@ export function Descobrir() {
                     <AtrizCardHorizontal key={atriz.id} atriz={atriz} />
                   ))}
                 </div>
+                {atrizesFiltradas.length === 0 && (
+                  <p className="py-8 text-center text-xs text-zinc-500">Nenhuma criadora encontrada.</p>
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-2">
@@ -76,6 +106,9 @@ export function Descobrir() {
                     <AtrizCardHorizontal key={atriz.id} atriz={atriz} />
                   ))}
                 </div>
+                {recentes.length === 0 && (
+                  <p className="py-8 text-center text-xs text-zinc-500">Nenhuma criadora disponível agora.</p>
+                )}
               </div>
             )}
           </div>
