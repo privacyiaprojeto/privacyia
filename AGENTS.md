@@ -300,6 +300,8 @@ Usar, quando aplicável e seguro:
 - git diff --check;
 - git status --short.
 
+Quando uma tarefa modificar código e o Harness local for aplicável, executar `node tools/agent-verify-local.mjs` antes de declarar readiness. O Harness não substitui validações específicas do domínio.
+
 Não executar teste que possa:
 
 - acessar produção;
