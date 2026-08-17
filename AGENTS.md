@@ -63,6 +63,17 @@ Integrações sensíveis incluem:
 
 Antes de criar nova entidade, página, rota, serviço ou fluxo, verificar se já existe algo que possa ser reutilizado ou alterado cirurgicamente.
 
+### Base de conhecimento persistente
+
+Antes de tarefas arquiteturais, funcionais ou de roadmap, consultar integralmente, conforme a relevância do escopo:
+
+- `docs/PROJECT_GLOSSARY.md`;
+- `docs/ARCHITECTURE.md`;
+- `docs/ROADMAP_STATE.md`;
+- `docs/PRODUCTION_GATES.md`.
+
+Esses documentos orientam termos, fronteiras, estado comprovado e gates, sem transformar código preparado em funcionalidade homologada.
+
 ---
 
 ## 3. Regra de ouro
