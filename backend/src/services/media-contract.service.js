@@ -1,38 +1,5 @@
-const IMAGE_TYPES = new Set([
-  'image',
-  'imagem',
-  'photo',
-  'foto',
-  'picture',
-  'png',
-  'jpg',
-  'jpeg',
-  'webp'
-])
-
-const AUDIO_TYPES = new Set([
-  'audio',
-  'audio_live',
-  'live_audio',
-  'audio-live',
-  'live-audio',
-  'chat_audio',
-  'audio_chat',
-  'tts',
-  'voice',
-  'voz'
-])
-
-const VIDEO_TYPES = new Set([
-  'video',
-  'vídeo',
-  'short_video',
-  'short-video',
-  'live_action',
-  'live-action',
-  'reel',
-  'clip'
-])
+import { inspectProtectedVideoRendererReadiness } from './video-renderer-readiness.service.js'
+import { normalizeMediaProductType } from './media-product-type.service.js'
 
 const PLACEHOLDER_WORDS = [
   'placeholder',
@@ -78,6 +45,15 @@ const OPENABLE_AUDIO_STATUSES = new Set([
   'active'
 ])
 
+const OPENABLE_VIDEO_STATUSES = new Set([
+  'sold',
+  'available',
+  'published',
+  'approved',
+  'ready',
+  'active'
+])
+
 function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '')
 }
@@ -108,34 +84,6 @@ function getMetadataValue(source, ...keys) {
   }
 
   return undefined
-}
-
-function normalizeMediaType(...sources) {
-  const raw = firstValue(
-    ...sources.flatMap((source) => [
-      source?.media_type,
-      source?.mediaType,
-      source?.content_type,
-      source?.contentType,
-      source?.type,
-      source?.asset_type,
-      source?.assetType,
-      source?.delivery_type,
-      source?.deliveryType,
-      getMetadataValue(source, 'media_type', 'mediaType', 'content_type', 'contentType', 'type', 'asset_type', 'assetType')
-    ])
-  )
-
-  const normalized = normalizeText(raw)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '_')
-
-  if (IMAGE_TYPES.has(normalized)) return { raw, mediaType: 'image' }
-  if (AUDIO_TYPES.has(normalized)) return { raw, mediaType: normalized.includes('chat') ? 'audio_chat' : 'audio_live' }
-  if (VIDEO_TYPES.has(normalized)) return { raw, mediaType: normalized.includes('live_action') || normalized.includes('live-action') ? 'live_action' : 'short_video' }
-
-  return { raw, mediaType: normalized || 'unknown' }
 }
 
 function hasPublicUrlLeak(...sources) {
@@ -298,8 +246,15 @@ function buildBlockedContract(base, reasonCode, userMessage, severity = 'BLOCKED
   }
 }
 
-export function buildClientMediaContract({ delivery = null, asset = null, combination = null } = {}) {
-  const { raw: mediaTypeRaw, mediaType } = normalizeMediaType(asset, delivery, combination)
+export function buildClientMediaContract({
+  delivery = null,
+  asset = null,
+  combination = null,
+  videoRendererReadiness = null,
+  videoPlaybackReadiness = null,
+} = {}) {
+  const normalizedProduct = normalizeMediaProductType(asset, delivery, combination)
+  const { raw: mediaTypeRaw, mediaType } = normalizedProduct
   const assetStatus = resolveAssetStatus(asset, combination, delivery)
   const publicUrlLeak = hasPublicUrlLeak(asset, delivery, combination)
   const privateStoragePointer = hasPrivateStoragePointer(asset, delivery, combination)
@@ -345,6 +300,16 @@ export function buildClientMediaContract({ delivery = null, asset = null, combin
     base.reasons.push('Combinação invisível/adminOnly para Cliente.')
   }
 
+  if (normalizedProduct.conflict) {
+    return buildBlockedContract(
+      base,
+      normalizedProduct.reasonCode || 'MEDIA_PRODUCT_SEMANTIC_CONFLICT',
+      'Esta mídia possui uma configuração de tipo incompatível e precisa ser revisada.',
+      'BLOCKED',
+      [`Semânticas incompatíveis: ${(normalizedProduct.semanticTypes || []).join(', ') || 'desconhecidas'}.`]
+    )
+  }
+
   if (publicUrlLeak) {
     return buildBlockedContract(
       base,
@@ -355,7 +320,7 @@ export function buildClientMediaContract({ delivery = null, asset = null, combin
     )
   }
 
-  const audioLooksProtectedAndReady = (mediaType === 'audio_live' || mediaType === 'audio_chat')
+  const audioLooksProtectedAndReady = (mediaType === 'audio' || mediaType === 'audio_chat')
     && hasDelivery
     && protectedView.hasProtectedViewUrl
     && privateStoragePointer
@@ -422,7 +387,20 @@ export function buildClientMediaContract({ delivery = null, asset = null, combin
     }
   }
 
-  if (mediaType === 'audio_live' || mediaType === 'audio_chat') {
+  if (mediaType === 'audio_live') {
+    return buildBlockedContract(
+      {
+        ...base,
+        clientSupported: true,
+      },
+      'LIVE_AUDIO_AUDIOVISUAL_RENDERER_NOT_READY',
+      'Live Audio audiovisual ainda não está disponível.',
+      'BLOCKED',
+      ['O áudio isolado não comprova presença visual da personagem, sincronização labial ou expressão facial.']
+    )
+  }
+
+  if (mediaType === 'audio' || mediaType === 'audio_chat') {
     const audioBase = {
       ...base,
       clientSupported: true,
@@ -459,18 +437,78 @@ export function buildClientMediaContract({ delivery = null, asset = null, combin
     }
   }
 
-  if (mediaType === 'short_video' || mediaType === 'live_action') {
+  if (mediaType === 'live_action') {
     return buildBlockedContract(
       {
         ...base,
-        clientSupported: false,
-        protectedRenderer: null
+        clientSupported: true,
       },
-      'VIDEO_RENDERER_NOT_IMPLEMENTED',
-      'Esta mídia de vídeo ainda não está disponível para abertura protegida.',
+      'LIVE_ACTION_INTERACTIVE_RENDERER_NOT_READY',
+      'Live Action interativo ainda não está disponível.',
       'BLOCKED',
-      ['Vídeo/Live Action ainda não tem renderer protegido homologado no Cliente.']
+      ['O renderer de vídeo genérico não comprova idle visual, ciclo de ação interativa ou resultado audiovisual de Live Action.']
     )
+  }
+
+  if (mediaType === 'short_video') {
+    const videoBase = {
+      ...base,
+      clientSupported: true,
+      protectedRenderer: 'video'
+    }
+    const rendererReadiness = videoRendererReadiness || inspectProtectedVideoRendererReadiness()
+
+    if (!rendererReadiness.ready) {
+      return buildBlockedContract(
+        videoBase,
+        rendererReadiness.reasonCode || 'VIDEO_RENDERER_NOT_READY',
+        rendererReadiness.userMessage || 'Esta mídia de vídeo ainda não está disponível para abertura protegida.',
+        'BLOCKED',
+        (rendererReadiness.blockers || []).map((blocker) => `Renderer de vídeo bloqueado: ${blocker}.`)
+      )
+    }
+
+    if (!hasDelivery || !protectedView.hasProtectedViewUrl || !privateStoragePointer) {
+      return buildBlockedContract(
+        videoBase,
+        'VIDEO_MISSING_PROTECTED_DELIVERY_OR_STORAGE',
+        'Este vídeo ainda não está disponível para abertura protegida.',
+        'REVIEW',
+        ['Vídeo reconhecido, mas falta delivery protegido, rota protegida ou ponteiro privado.']
+      )
+    }
+
+    if (assetStatus && !OPENABLE_VIDEO_STATUSES.has(assetStatus)) {
+      return buildBlockedContract(
+        videoBase,
+        'VIDEO_STATUS_NOT_OPENABLE',
+        'Este vídeo ainda não foi liberado.',
+        'REVIEW',
+        [`Status de vídeo não confirmado como abrível: ${assetStatus}.`]
+      )
+    }
+
+    const hlsPlaybackReady = videoPlaybackReadiness?.ready === true
+      && normalizeText(videoPlaybackReadiness?.renditionType) === 'hls_stream'
+
+    if (!hlsPlaybackReady) {
+      return buildBlockedContract(
+        videoBase,
+        videoPlaybackReadiness?.reasonCode || 'VIDEO_HLS_RENDITION_NOT_READY',
+        videoPlaybackReadiness?.userMessage || 'Vídeo em preparação. O streaming HLS protegido ainda não está disponível.',
+        'REVIEW',
+        ['A abertura de vídeo exige uma rendition HLS available comprovada pelo serviço de delivery.']
+      )
+    }
+
+    return {
+      ...videoBase,
+      clientOpenable: true,
+      clientPurchasable: false,
+      reasonCode: 'OPENABLE_VIDEO_PROTECTED_DELIVERY',
+      severity: 'OK',
+      userMessage: null
+    }
   }
 
   return buildBlockedContract(
@@ -480,6 +518,21 @@ export function buildClientMediaContract({ delivery = null, asset = null, combin
     'BLOCKED',
     ['Tipo de mídia desconhecido ou incompatível.']
   )
+}
+
+export function buildVideoPlaybackReadiness(rendition = null) {
+  const renditionType = normalizeText(rendition?.rendition_type || rendition?.renditionType)
+  const renditionStatus = normalizeText(rendition?.status)
+  const ready = renditionType === 'hls_stream' && renditionStatus === 'available'
+
+  return {
+    ready,
+    status: ready ? 'AVAILABLE' : 'PROCESSING',
+    renditionId: rendition?.id || null,
+    renditionType: renditionType || null,
+    reasonCode: ready ? 'VIDEO_HLS_RENDITION_AVAILABLE' : 'VIDEO_HLS_RENDITION_NOT_READY',
+    userMessage: ready ? null : 'Vídeo em preparação. O streaming HLS protegido ainda não está disponível.',
+  }
 }
 
 export function sanitizeClientMediaContract(contract) {
@@ -497,5 +550,6 @@ export function sanitizeClientMediaContract(contract) {
 
 export default {
   buildClientMediaContract,
+  buildVideoPlaybackReadiness,
   sanitizeClientMediaContract
 }

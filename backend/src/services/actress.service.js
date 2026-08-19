@@ -4,6 +4,10 @@ import {
   getPublishedCatalogCompanion,
   listPublishedCatalogCompanions,
 } from './client-catalog-read-model.service.js'
+import {
+  filterExplicitLiveActionProducts,
+  filterExplicitLiveAudioProducts,
+} from './media-product-type.service.js'
 
 
 export async function listActresses(_profileId) {
@@ -173,10 +177,10 @@ export async function getActressPublicProfile(profileId, identifier) {
     }
   }
 
-  const liveActions = products
-    .filter((product) => ['live_action', 'video', 'short_video', 'video_curto'].includes(product.mediaType))
+  const liveActions = filterExplicitLiveActionProducts(products)
     .map((product) => ({
       id: product.id,
+      mediaType: product.mediaType,
       nome: product.title,
       titulo: product.title,
       descricao: product.description || 'Cena publicada pelo Admin.',
@@ -193,10 +197,10 @@ export async function getActressPublicProfile(profileId, identifier) {
       mediaContract: publishedContract(product),
     }))
 
-  const liveAudios = products
-    .filter((product) => ['audio', 'live_audio', 'audio_live', 'tts'].includes(product.mediaType))
+  const liveAudios = filterExplicitLiveAudioProducts(products)
     .map((product) => ({
       id: product.id,
+      mediaType: product.mediaType,
       titulo: product.title,
       descricao: product.description || 'Áudio publicado pelo Admin.',
       duracao: 'Premium',

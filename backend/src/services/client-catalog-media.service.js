@@ -1,11 +1,13 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
 import { fetchProtectedAssetPayload, fetchProtectedRenditionPayload } from './media-protection.service.js'
+import { normalizeMediaProductType } from './media-product-type.service.js'
+import { inspectProtectedVideoRendererReadiness } from './video-renderer-readiness.service.js'
 
 const VALID_DESTINATIONS = new Set(['feed', 'premium', 'public_storefront'])
 const APPROVED_ASSET_STATUSES = new Set(['available', 'sold', 'published'])
-const VIDEO_TYPES = new Set(['video', 'short_video', 'video_curto', 'live_action'])
-const AUDIO_TYPES = new Set(['audio', 'live_audio', 'audio_live', 'tts'])
+const STANDARD_VIDEO_TYPES = new Set(['short_video'])
+const STANDARD_AUDIO_TYPES = new Set(['audio', 'audio_chat'])
 
 function safeObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -13,13 +15,6 @@ function safeObject(value) {
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
-}
-
-function normalizeMediaType(value) {
-  const normalized = normalizeText(value).replace(/\s+/g, '_')
-  if (VIDEO_TYPES.has(normalized)) return normalized
-  if (AUDIO_TYPES.has(normalized)) return normalized
-  return 'image'
 }
 
 function publicationFromCombination(combination) {
@@ -111,8 +106,9 @@ function hasPendingRendition(renditions) {
 
 export async function getPublishedCatalogMediaDescriptor(productId) {
   const context = await loadProductContext(productId)
-  const mediaType = normalizeMediaType(context.combination.media_type)
   const asset = context.asset
+  const normalizedProduct = normalizeMediaProductType(asset, context.combination)
+  const mediaType = normalizedProduct.mediaType === 'unknown' ? 'image' : normalizedProduct.mediaType
 
   const base = {
     productId: context.combination.id,
@@ -129,6 +125,13 @@ export async function getPublishedCatalogMediaDescriptor(productId) {
     userMessage: 'Mídia indisponível.',
   }
 
+  if (normalizedProduct.conflict) {
+    return {
+      ...base,
+      userMessage: 'Mídia com configuração de tipo incompatível. Revisão necessária.',
+    }
+  }
+
   if (!asset || !APPROVED_ASSET_STATUSES.has(normalizeText(asset.status)) || isSimulated(asset)) {
     return base
   }
@@ -137,7 +140,29 @@ export async function getPublishedCatalogMediaDescriptor(productId) {
     return { ...base, userMessage: 'Mídia aprovada sem armazenamento privado válido.' }
   }
 
-  if (VIDEO_TYPES.has(mediaType)) {
+  if (mediaType === 'live_action') {
+    return {
+      ...base,
+      userMessage: 'Live Action interativo ainda não está disponível.',
+    }
+  }
+
+  if (mediaType === 'audio_live') {
+    return {
+      ...base,
+      userMessage: 'Live Audio audiovisual ainda não está disponível.',
+    }
+  }
+
+  if (STANDARD_VIDEO_TYPES.has(mediaType)) {
+    const rendererReadiness = inspectProtectedVideoRendererReadiness()
+    if (!rendererReadiness.ready) {
+      return {
+        ...base,
+        userMessage: rendererReadiness.userMessage,
+      }
+    }
+
     const preview = selectAvailableRendition(context.renditions, 'preview')
     if (preview) {
       return {
@@ -157,7 +182,7 @@ export async function getPublishedCatalogMediaDescriptor(productId) {
     }
   }
 
-  if (AUDIO_TYPES.has(mediaType)) {
+  if (STANDARD_AUDIO_TYPES.has(mediaType)) {
     const preview = selectAvailableRendition(context.renditions, 'preview')
     if (preview) {
       return {

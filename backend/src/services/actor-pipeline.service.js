@@ -685,6 +685,11 @@ async function createVideoProduction(context, input) {
       slots: [{ slotIndex: 1, participantType: 'actor', actorProfileId: context.actor.id, companionId: context.companion.id }],
       prompt: `${prompt}, variation ${index + 1} of ${input.variations}`,
       execute: true,
+      requestContext: {
+        source: 'actor_pipeline_short_video',
+        productType: 'short_video',
+        contentType: 'short_video',
+      },
     }))
   }
   return {
@@ -728,6 +733,11 @@ async function createLiveActionProduction(context, input) {
     slots,
     prompt: input.notes || `Live Action V2V de ${context.companion.name || context.actor.display_name}, preservar identidade e movimento natural.`,
     execute: true,
+    requestContext: {
+      source: 'actor_pipeline_live_action',
+      productType: 'live_action',
+      contentType: 'live_action',
+    },
   })
   return { mode: 'scene_direction_v2v', ...result }
 }

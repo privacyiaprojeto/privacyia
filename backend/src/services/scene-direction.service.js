@@ -11,6 +11,7 @@ import {
 import { addVideoShortJob } from '../queues/video-short.queue.js'
 import { addVideoV2vJob } from '../queues/video-v2v.queue.js'
 import { assertIdentityAdaptersForCastSlots } from './actor-identity-lora.service.js'
+import { assertSceneDirectionProductType } from './media-product-type.service.js'
 
 const BASE_SCENES_TABLE = 'base_scenes'
 const DIRECTIONS_TABLE = 'scene_directions'
@@ -358,6 +359,10 @@ export async function listSplitBeneficiaries() {
 }
 
 export async function createSceneDirection(input = {}, { adminProfileId = null } = {}) {
+  const productType = assertSceneDirectionProductType({
+    production_mode: input.productionMode,
+    metadata: { requestContext: input.requestContext || null },
+  })
   const baseScene = input.productionMode === 'v2v'
     ? await getBaseSceneOrThrow(input.baseSceneId, { readyOnly: true })
     : null
@@ -406,7 +411,7 @@ export async function createSceneDirection(input = {}, { adminProfileId = null }
 
   const identityAdaptersBySlot = await assertIdentityAdaptersForCastSlots(
     castSlotsWithoutIdentity,
-    input.productionMode === 'v2v' ? 'live_action' : 'short_video',
+    productType,
   )
   const castSlots = castSlotsWithoutIdentity.map((slot) => {
     const adapter = slot.participantType === 'actor' ? identityAdaptersBySlot.get(slot.slotIndex) || null : null
@@ -464,6 +469,7 @@ export async function createSceneDirection(input = {}, { adminProfileId = null }
       provider_payload: providerPayload,
       metadata: {
         source: input.requestContext?.source || 'admin_scene_direction',
+        productType,
         requestContext: input.requestContext || null,
         requestedExecution: input.execute === true,
         queueAllowed,

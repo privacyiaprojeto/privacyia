@@ -7,6 +7,7 @@ import { registerMasterForLegacyVariant } from './media-asset-master.service.js'
 import { requestDefaultRenditionsForMaster } from './media-rendition.service.js'
 import { markClientGenerationFailed, markClientGenerationQaPending } from './media-generation-tracking.service.js'
 import { assertIdentityAdaptersForCastSlots } from './actor-identity-lora.service.js'
+import { assertSceneDirectionProductType } from './media-product-type.service.js'
 
 const DIRECTIONS_TABLE = 'scene_directions'
 const SCENES_TABLE = 'base_scenes'
@@ -203,7 +204,7 @@ async function loadApprovedMappingReferences(castSlots = []) {
   return byActor
 }
 
-async function createCatalogProduct({ direction, castSlots, storage, generated }) {
+async function createCatalogProduct({ direction, castSlots, storage, generated, productType }) {
   const primaryActor = castSlots.find((slot) => slot.participantType === 'actor' && slot.companionId)
   if (!primaryActor) return { combination: null, asset: null }
 
@@ -232,6 +233,7 @@ async function createCatalogProduct({ direction, castSlots, storage, generated }
     media_origin: 'scene_direction_studio',
     metadata: {
       source: 'scene_direction_studio',
+      productType,
       directionId: direction.id,
       baseSceneId: direction.base_scene_id || null,
       castSlots,
@@ -267,6 +269,7 @@ async function createCatalogProduct({ direction, castSlots, storage, generated }
     },
     metadata: {
       source: 'scene_direction_studio',
+      productType,
       provider: 'runpod',
       directionId: direction.id,
       baseSceneId: direction.base_scene_id || null,
@@ -295,6 +298,7 @@ async function createCatalogProduct({ direction, castSlots, storage, generated }
     contentType: generated.mimeType || storage.contentType || 'video/mp4',
     metadata: {
       source: 'scene_direction_studio',
+      productType,
       actorProfileId: primaryActor.actorProfileId || null,
       combinationId: combination.id,
       directionId: direction.id,
@@ -316,13 +320,14 @@ export async function processSceneDirectionJob(job) {
     return { directionId, skipped: true, reason: `status_${direction.status}` }
   }
 
+  const productType = assertSceneDirectionProductType(direction)
   await updateDirection(directionId, { status: 'processing', error_message: null, queue_job_id: String(job.id || direction.queue_job_id || '') || null })
 
   try {
     const castSlots = Array.isArray(direction.cast_slots) ? direction.cast_slots : []
     const identityAdaptersBySlot = await assertIdentityAdaptersForCastSlots(
       castSlots,
-      direction.production_mode === 'v2v' ? 'live_action' : 'short_video',
+      productType,
     )
     const [companionById, mappingReferencesByActor] = await Promise.all([
       loadCompanions(castSlots),
@@ -384,7 +389,7 @@ export async function processSceneDirectionJob(job) {
       metadata: { source: 'scene_direction_studio', direction_id: directionId },
     })
 
-    const product = await createCatalogProduct({ direction, castSlots, storage, generated })
+    const product = await createCatalogProduct({ direction, castSlots, storage, generated, productType })
     const renditionRequests = product.master?.id
       ? await requestDefaultRenditionsForMaster({
           masterAssetId: product.master.id,

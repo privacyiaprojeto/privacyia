@@ -1,10 +1,12 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
+import { normalizeMediaProductType } from './media-product-type.service.js'
+import { inspectProtectedVideoRendererReadiness } from './video-renderer-readiness.service.js'
 
 const VALID_DESTINATIONS = new Set(['feed', 'premium', 'public_storefront'])
 const APPROVED_ASSET_STATUSES = new Set(['available', 'sold', 'published'])
-const VIDEO_TYPES = new Set(['video', 'short_video', 'video_curto', 'live_action'])
-const AUDIO_TYPES = new Set(['audio', 'live_audio', 'audio_live', 'tts'])
+const VIDEO_PRODUCTS = new Set(['short_video', 'live_action'])
+const AUDIO_PRODUCTS = new Set(['audio', 'audio_chat', 'audio_live'])
 
 const PUBLIC_COMBINATION_FIELDS = [
   'id',
@@ -97,11 +99,9 @@ function publicCompanionFromRow(row = {}) {
   }
 }
 
-function normalizeMediaType(value) {
-  const normalized = normalizeText(value).replace(/\s+/g, '_')
-  if (VIDEO_TYPES.has(normalized)) return normalized
-  if (AUDIO_TYPES.has(normalized)) return normalized
-  return 'image'
+function normalizeMediaType(...sources) {
+  const { mediaType } = normalizeMediaProductType(...sources)
+  return mediaType === 'unknown' ? 'image' : mediaType
 }
 
 function publicationFromRow(row) {
@@ -153,7 +153,7 @@ function isSimulatedAsset(asset) {
 
 function buildPreview({ productId, mediaType, asset, renditions }) {
   const base = {
-    type: VIDEO_TYPES.has(mediaType) ? 'video' : AUDIO_TYPES.has(mediaType) ? 'audio' : 'image',
+    type: VIDEO_PRODUCTS.has(mediaType) ? 'video' : AUDIO_PRODUCTS.has(mediaType) ? 'audio' : 'image',
     url: `/media/catalog-products/${productId}/preview`,
     mediaStatus: 'unavailable',
     streamKind: null,
@@ -161,6 +161,13 @@ function buildPreview({ productId, mediaType, asset, renditions }) {
     masterAssetId: asset?.master_asset_id || null,
     renditionId: null,
     userMessage: 'Mídia indisponível.',
+  }
+
+  if (mediaType === 'conflict') {
+    return {
+      ...base,
+      userMessage: 'Mídia com configuração de tipo incompatível. Revisão necessária.',
+    }
   }
 
   if (
@@ -173,7 +180,29 @@ function buildPreview({ productId, mediaType, asset, renditions }) {
     return base
   }
 
-  if (VIDEO_TYPES.has(mediaType)) {
+  if (mediaType === 'live_action') {
+    return {
+      ...base,
+      userMessage: 'Live Action interativo ainda não está disponível.',
+    }
+  }
+
+  if (mediaType === 'audio_live') {
+    return {
+      ...base,
+      userMessage: 'Live Audio audiovisual ainda não está disponível.',
+    }
+  }
+
+  if (mediaType === 'short_video') {
+    const rendererReadiness = inspectProtectedVideoRendererReadiness()
+    if (!rendererReadiness.ready) {
+      return {
+        ...base,
+        userMessage: rendererReadiness.userMessage,
+      }
+    }
+
     const preview = renditions.find((item) => item.rendition_type === 'preview' && item.status === 'available')
     if (preview) {
       return {
@@ -192,7 +221,7 @@ function buildPreview({ productId, mediaType, asset, renditions }) {
     }
   }
 
-  if (AUDIO_TYPES.has(mediaType)) {
+  if (mediaType === 'audio' || mediaType === 'audio_chat') {
     const preview = renditions.find((item) => item.rendition_type === 'preview' && item.status === 'available')
     if (preview) {
       return {
@@ -292,7 +321,7 @@ async function loadActiveActorBindings(actorIds = [], companionId = null) {
 }
 
 function publicProductFromContext(context, companion, asset, renditions) {
-  const mediaType = normalizeMediaType(context.row.media_type)
+  const mediaType = normalizeMediaType(asset, context.row)
   const preview = buildPreview({
     productId: context.row.id,
     mediaType,

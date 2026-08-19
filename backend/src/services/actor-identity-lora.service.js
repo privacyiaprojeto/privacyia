@@ -45,8 +45,8 @@ function latestIso(...values) {
 
 function normalizeContentType(value) {
   const normalized = normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_')
-  if (['video', 'video_short', 'short_video', 'i2v', 'video_i2v'].includes(normalized)) return normalized === 'video' ? 'video' : 'short_video'
-  if (['live_action', 'live_action_v2v', 'v2v', 'video_v2v'].includes(normalized)) return 'live_action'
+  if (['video', 'video_short', 'short_video', 'i2v', 'video_i2v', 'v2v', 'video_v2v'].includes(normalized)) return normalized === 'video' ? 'video' : 'short_video'
+  if (['live_action', 'live_action_v2v'].includes(normalized)) return 'live_action'
   if (['image', 'imagem', 'photo', 'foto'].includes(normalized)) return 'image'
   if (['audio', 'live_audio', 'voice', 'tts'].includes(normalized)) return normalized === 'live_audio' ? 'live_audio' : 'audio'
   return normalized

@@ -117,6 +117,8 @@ const envSchema = z.object({
   RENDITION_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(600).default(180),
   RENDITION_MANIFEST_MAX_BYTES: z.coerce.number().int().min(16384).max(4194304).default(1048576),
   MEDIA_PROTECTED_IMAGE_MAX_BYTES: z.coerce.number().int().min(1048576).max(104857600).default(36700160),
+  // Abertura de vídeo no Cliente exige homologação explícita; ausente/false permanece fail-closed.
+  PROTECTED_VIDEO_RENDERER_ENABLED: booleanFromString.default(false),
 
   // P3 — limites distribuídos das rotas de mídia
   MEDIA_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).max(3600000).default(60000),

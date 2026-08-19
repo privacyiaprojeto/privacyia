@@ -8,6 +8,7 @@ import { assertAvatarCompliantForProduction } from './actor-compliance.service.j
 import { createSceneDirection } from './scene-direction.service.js'
 import { markClientGenerationFailed, markClientGenerationQueued } from './media-generation-tracking.service.js'
 import { assertApprovedActorIdentityForProduction } from './actor-identity-lora.service.js'
+import { inspectProtectedVideoRendererReadiness } from './video-renderer-readiness.service.js'
 
 const IMAGE_MEDIA_KIND = 'imagem'
 const VIDEO_MEDIA_KIND = 'video'
@@ -550,6 +551,8 @@ function buildVideoPromptPayload({ companion, input = {}, options = {}, creditsC
 
   return {
     mediaKind: VIDEO_MEDIA_KIND,
+    productType: 'short_video',
+    contentType: 'short_video',
     companionId: companion?.id,
     selectedOptions: options,
     guidedSelections: Object.values(options).filter((item) => item?.isGuided),
@@ -829,6 +832,14 @@ export async function createImageMediaGeneration(profileId, input) {
 }
 
 export async function createVideoMediaGeneration(profileId, input) {
+  const rendererReadiness = inspectProtectedVideoRendererReadiness({ requireRenditionPipeline: true })
+  if (!rendererReadiness.ready) {
+    throw new ApiError(503, rendererReadiness.userMessage, {
+      reasonCode: rendererReadiness.reasonCode,
+      rendererStatus: rendererReadiness.status,
+      blockers: rendererReadiness.blockers,
+    })
+  }
   if (!queueEnabledForVideo()) throw new ApiError(503, 'Produção canônica indisponível: mantenha a solicitação bloqueada até os workers de vídeo serem habilitados.')
   if (!env.RUNPOD_VIDEO_ENDPOINT_ID) throw new ApiError(503, 'RunPod de vídeo ainda não configurado.')
 
@@ -841,7 +852,7 @@ export async function createVideoMediaGeneration(profileId, input) {
     actorProfileId: context.actorProfileId,
     companionId,
     authorizationId: context.authorizationId,
-    contentType: input.productionMode === 'v2v' ? 'live_action' : 'short_video',
+    contentType: 'short_video',
   })
   const options = await getSelectedVideoOptions(input)
   const pricing = await getVideoPricingRule()
@@ -862,7 +873,15 @@ export async function createVideoMediaGeneration(profileId, input) {
       slots: [{ slotIndex: 1, participantType: 'actor', actorProfileId: context.actorProfileId, companionId }],
       prompt: promptPayload.prompt,
       execute: true,
-      requestContext: { source: 'client_canonical_queue', profileId, mediaJobId: mediaJob.id, generationId: generation.id, creditsCost: pricing.creditsCost },
+      requestContext: {
+        source: 'client_canonical_queue',
+        productType: 'short_video',
+        contentType: 'short_video',
+        profileId,
+        mediaJobId: mediaJob.id,
+        generationId: generation.id,
+        creditsCost: pricing.creditsCost,
+      },
     })
 
     const direction = directionResult.direction

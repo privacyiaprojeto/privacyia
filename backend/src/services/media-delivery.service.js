@@ -1,7 +1,11 @@
 import { supabaseAdmin } from '../config/supabase.js'
 import { ApiError } from '../utils/apiError.js'
 import { fetchProtectedAssetPayload, fetchProtectedRenditionPayload } from './media-protection.service.js'
-import { buildClientMediaContract, sanitizeClientMediaContract } from './media-contract.service.js'
+import {
+  buildClientMediaContract,
+  buildVideoPlaybackReadiness,
+  sanitizeClientMediaContract,
+} from './media-contract.service.js'
 import { buildProtectedPurchaseContract, sanitizeClientPurchaseContract } from './media-purchase-contract.service.js'
 
 const ASSET_VARIANTS_TABLE = 'media_asset_variants'
@@ -93,16 +97,21 @@ async function getCombinationById(combinationId) {
   return data || null
 }
 
-function buildDeliveryMediaContract({ delivery, asset, combination }) {
-  return buildClientMediaContract({ delivery, asset, combination })
+function buildDeliveryMediaContract({ delivery, asset, combination, rendition = null }) {
+  return buildClientMediaContract({
+    delivery,
+    asset,
+    combination,
+    videoPlaybackReadiness: buildVideoPlaybackReadiness(rendition),
+  })
 }
 
-function buildSafeDeliveryMediaContract({ delivery, asset, combination }) {
-  return sanitizeClientMediaContract(buildDeliveryMediaContract({ delivery, asset, combination }))
+function buildSafeDeliveryMediaContract({ delivery, asset, combination, rendition = null }) {
+  return sanitizeClientMediaContract(buildDeliveryMediaContract({ delivery, asset, combination, rendition }))
 }
 
-function assertDeliveryOpenableByContract({ delivery, asset, combination }) {
-  const mediaContract = buildDeliveryMediaContract({ delivery, asset, combination })
+function assertDeliveryOpenableByContract({ delivery, asset, combination, rendition = null }) {
+  const mediaContract = buildDeliveryMediaContract({ delivery, asset, combination, rendition })
 
   if (!mediaContract.clientOpenable) {
     throw new ApiError(409, mediaContract.userMessage || 'Esta mídia ainda não está disponível para abertura protegida.', {
@@ -455,13 +464,21 @@ function buildProtectedDeliveryUrl(deliveryId) {
 }
 
 function buildDeliveryPlaybackState({ delivery, asset, combination, rendition }) {
-  const contract = buildDeliveryMediaContract({ delivery, asset, combination })
+  const contract = buildDeliveryMediaContract({ delivery, asset, combination, rendition })
   const renderer = String(contract.protectedRenderer || '').toLowerCase()
   const mediaType = String(contract.mediaType || asset?.media_type || combination?.media_type || '').toLowerCase()
   const isVideo = renderer === 'video' || renderer === 'live_action' || mediaType.includes('video') || mediaType.includes('live_action')
   const isAudio = renderer === 'audio' || mediaType.includes('audio')
 
   if (!contract.clientOpenable) {
+    if (contract.reasonCode === 'VIDEO_HLS_RENDITION_NOT_READY') {
+      return {
+        mediaStatus: 'processing',
+        streamKind: null,
+        userMessage: contract.userMessage || 'Vídeo em preparação. A rendition HLS ainda não está disponível.',
+      }
+    }
+
     return {
       mediaStatus: 'unavailable',
       streamKind: null,
@@ -603,6 +620,7 @@ function mapDeliveryItem({ delivery, asset, companion, combination, galleryItem,
       delivery,
       asset,
       combination,
+      rendition,
     }),
   }
 }
@@ -922,7 +940,23 @@ export async function getProtectedDeliveryMediaDescriptor({
   const delivery = await getDeliveryForProfile(profileId, deliveryId)
   const asset = await getAssetVariant(delivery.variant_id)
   const combination = await getCombinationById(delivery.combination_id || asset.combination_id)
-  const mediaContract = assertDeliveryOpenableByContract({ delivery, asset, combination })
+  const rendition = await getRenditionForProtectedDelivery({ delivery, asset })
+  const mediaContract = buildDeliveryMediaContract({ delivery, asset, combination, rendition })
+
+  if (mediaContract.reasonCode === 'VIDEO_HLS_RENDITION_NOT_READY') {
+    return {
+      deliveryId: delivery.id,
+      assetId: asset.id,
+      masterAssetId: delivery.master_asset_id || asset.master_asset_id || null,
+      mediaStatus: 'processing',
+      streamKind: null,
+      mediaType: mediaContract.mediaType || asset.media_type || combination?.media_type || null,
+      protectedRenderer: 'video',
+      userMessage: mediaContract.userMessage,
+    }
+  }
+
+  assertDeliveryOpenableByContract({ delivery, asset, combination, rendition })
 
   if (['rejected', 'deleted', 'archived'].includes(asset.status)) {
     return {
@@ -939,7 +973,6 @@ export async function getProtectedDeliveryMediaDescriptor({
   const renderer = String(mediaContract.protectedRenderer || '').toLowerCase()
   const isVideo = renderer === 'video' || renderer === 'live_action' || String(asset.media_type || '').toLowerCase().includes('video')
   const isAudio = renderer === 'audio' || String(asset.media_type || '').toLowerCase().includes('audio')
-  const rendition = await getRenditionForProtectedDelivery({ delivery, asset })
 
   if (isVideo && !rendition) {
     return {
@@ -976,11 +1009,13 @@ export async function streamProtectedDelivery({
   const delivery = await getDeliveryForProfile(profileId, deliveryId)
   const asset = await getAssetVariant(delivery.variant_id)
   const combination = await getCombinationById(delivery.combination_id || asset.combination_id)
+  const rendition = await getRenditionForProtectedDelivery({ delivery, asset })
 
   assertDeliveryOpenableByContract({
     delivery,
     asset,
     combination,
+    rendition,
   })
 
   if (['rejected', 'deleted', 'archived'].includes(asset.status)) {
@@ -990,7 +1025,6 @@ export async function streamProtectedDelivery({
     })
   }
 
-  const rendition = await getRenditionForProtectedDelivery({ delivery, asset })
   const commonInput = {
     actorProfileId: profileId,
     requestId: requestContext.requestId || null,
@@ -1008,7 +1042,7 @@ export async function streamProtectedDelivery({
     return fetchProtectedRenditionPayload(rendition, commonInput)
   }
 
-  const protectedRenderer = String(buildDeliveryMediaContract({ delivery, asset, combination }).protectedRenderer || '').toLowerCase()
+  const protectedRenderer = String(buildDeliveryMediaContract({ delivery, asset, combination, rendition }).protectedRenderer || '').toLowerCase()
   const isVideoDelivery = protectedRenderer === 'video' || protectedRenderer === 'live_action' || String(asset.media_type || '').toLowerCase().includes('video')
   if (isVideoDelivery) {
     throw new ApiError(409, 'Vídeo em preparação. A rendition HLS protegida ainda não está disponível.', {

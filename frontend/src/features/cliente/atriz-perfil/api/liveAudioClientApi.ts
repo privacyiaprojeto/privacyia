@@ -263,22 +263,25 @@ function deliveryBelongsToCompanion(delivery: MediaDeliveryListItem, companionId
   ].some((value) => isSameId(value, target))
 }
 
-function isAudioLiveDeliveryForList(delivery: MediaDeliveryListItem) {
-  const mediaType = String(delivery.asset?.mediaType || delivery.combination?.mediaType || delivery.mediaContract?.mediaType || '').toLowerCase()
+function normalizeMediaType(value: unknown) {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
 
-  return (
-    mediaType === 'audio_live' ||
-    mediaType === 'live_audio' ||
-    mediaType === 'audio' ||
-    mediaType.includes('audio')
+export function isExplicitLiveAudioDelivery(delivery: MediaDeliveryListItem) {
+  const mediaType = normalizeMediaType(
+    delivery.mediaContract?.mediaType
+    || delivery.asset?.mediaType
+    || delivery.combination?.mediaType,
   )
+
+  return mediaType === 'audio_live' || mediaType === 'live_audio'
 }
 
 function filterAudioLiveDeliveriesForCompanion(response: MediaDeliveryListResponse, companionId: string): MediaDeliveryListResponse {
   return {
     ...response,
     items: (response.items || []).filter((delivery) => (
-      deliveryBelongsToCompanion(delivery, companionId) && isAudioLiveDeliveryForList(delivery)
+      deliveryBelongsToCompanion(delivery, companionId) && isExplicitLiveAudioDelivery(delivery)
     )),
   }
 }

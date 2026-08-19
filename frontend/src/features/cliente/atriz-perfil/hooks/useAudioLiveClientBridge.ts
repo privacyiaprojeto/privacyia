@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getLiveAudioDeliveries,
+  isExplicitLiveAudioDelivery,
   type MediaDeliveryListItem,
 } from '@/features/cliente/atriz-perfil/api/liveAudioClientApi'
 import { getMediaPurchasePreview } from '@/features/cliente/media-purchase'
@@ -44,6 +45,15 @@ function itemBelongsToAtriz(item: LiveAudioItem, atriz: AtrizPerfilPublico | und
   const raw = item as LiveAudioItem & { companionId?: string | null }
   if (!raw.companionId) return true
   return isSameId(raw.companionId, atriz?.id)
+}
+
+function isExplicitLiveAudioItem(item: LiveAudioItem) {
+  const mediaType = String(item.mediaContract?.mediaType || item.mediaType || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+
+  return mediaType === 'audio_live' || mediaType === 'live_audio'
 }
 
 function getDeliveryKeys(delivery: MediaDeliveryListItem) {
@@ -104,13 +114,10 @@ function buildDeliveryIndex(deliveries: MediaDeliveryListItem[]) {
   return index
 }
 
-function isAudioLiveDelivery(delivery: MediaDeliveryListItem) {
-  const mediaType = String(delivery.asset?.mediaType || delivery.combination?.mediaType || '').toLowerCase()
-  return !mediaType || mediaType === 'live_audio' || mediaType === 'audio' || mediaType.includes('audio')
-}
-
 function isPlayableAudioLiveDelivery(delivery: MediaDeliveryListItem) {
-  return Boolean(delivery.protectedViewUrl) && isAudioLiveDelivery(delivery)
+  return Boolean(delivery.protectedViewUrl)
+    && isExplicitLiveAudioDelivery(delivery)
+    && delivery.mediaContract?.clientOpenable === true
 }
 
 function firstName(value: unknown) {
@@ -135,11 +142,13 @@ function makeUnlockedItemFromDelivery(atriz: AtrizPerfilPublico, delivery: Media
     variantId: delivery.variantId,
     combinationId: delivery.combinationId,
     deliveryId: delivery.id,
+    mediaType: delivery.mediaContract?.mediaType || delivery.asset?.mediaType || delivery.combination?.mediaType || 'audio_live',
+    mediaContract: delivery.mediaContract || null,
   }
 }
 
 function enrichItemWithDelivery(item: LiveAudioItem, delivery?: MediaDeliveryListItem | null): LiveAudioItem {
-  if (!delivery?.protectedViewUrl) return item
+  if (!delivery || !isPlayableAudioLiveDelivery(delivery)) return item
 
   return {
     ...item,
@@ -152,13 +161,15 @@ function enrichItemWithDelivery(item: LiveAudioItem, delivery?: MediaDeliveryLis
     variantId: item.variantId || delivery.variantId,
     combinationId: item.combinationId || delivery.combinationId,
     priceCredits: item.priceCredits ?? delivery.pricing?.totalPriceCredits ?? delivery.combination?.priceCredits ?? null,
+    mediaType: item.mediaType || delivery.mediaContract?.mediaType || delivery.asset?.mediaType || delivery.combination?.mediaType || null,
+    mediaContract: delivery.mediaContract || item.mediaContract || null,
   }
 }
 
 function findDirectDeliveryForItem(item: LiveAudioItem, index: Map<string, MediaDeliveryListItem>) {
   return getItemKeys(item)
     .map((key) => index.get(key))
-    .find((delivery): delivery is MediaDeliveryListItem => Boolean(delivery?.protectedViewUrl))
+    .find((delivery): delivery is MediaDeliveryListItem => Boolean(delivery && isPlayableAudioLiveDelivery(delivery)))
 }
 
 function resolveFallbackDeliveryForUnlockedStaticCard(item: LiveAudioItem, deliveries: MediaDeliveryListItem[]) {
@@ -184,7 +195,7 @@ function resolveDeliveryForItem(
 function mergeLiveAudioDeliveries(atriz: AtrizPerfilPublico | undefined, deliveries: MediaDeliveryListItem[]): AtrizPerfilPublico | undefined {
   if (!atriz) return atriz
 
-  const scopedDeliveries = filterDeliveriesForAtriz(deliveries, atriz)
+  const scopedDeliveries = filterDeliveriesForAtriz(deliveries, atriz).filter(isExplicitLiveAudioDelivery)
   const deliveryIndex = buildDeliveryIndex(scopedDeliveries)
   const consumedDeliveryIds = new Set<string>()
   const injectedUnlockedItems: LiveAudioItem[] = []
@@ -197,6 +208,7 @@ function mergeLiveAudioDeliveries(atriz: AtrizPerfilPublico | undefined, deliver
     })
 
   const existingItems = (atriz.liveAudios || [])
+    .filter(isExplicitLiveAudioItem)
     .filter((item) => itemBelongsToAtriz(item, atriz))
     .map((item) => {
       const matchedDelivery = resolveDeliveryForItem(item, deliveryIndex, scopedDeliveries)

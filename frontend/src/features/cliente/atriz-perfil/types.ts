@@ -13,6 +13,7 @@ export interface ClientMediaContract {
 
 export interface LiveActionItem {
   id: string
+  mediaType?: string | null
   nome: string
   titulo?: string
   descricao?: string
@@ -32,6 +33,7 @@ export interface LiveActionItem {
 
 export interface LiveAudioItem {
   id: string
+  mediaType?: string | null
   titulo: string
   descricao?: string
   duracao: string

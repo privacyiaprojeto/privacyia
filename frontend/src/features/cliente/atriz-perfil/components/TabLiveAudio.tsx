@@ -32,6 +32,15 @@ function mediaStatusLabel(item: LiveAudioItem) {
   return item.mediaStatus === 'ready' ? 'Preview disponível' : 'Indisponível'
 }
 
+function isExplicitLiveAudioItem(item: LiveAudioItem) {
+  const mediaType = String(item.mediaContract?.mediaType || item.mediaType || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+
+  return mediaType === 'audio_live' || mediaType === 'live_audio'
+}
+
 function AudioRow({
   atrizNome,
   item,
@@ -54,6 +63,7 @@ function AudioRow({
   const isPurchasing = purchasingId === item.id
   const hasProtectedDelivery = Boolean(item.protectedViewUrl) && item.mediaContract?.clientOpenable === true
   const productionBlocked = item.mediaStatus !== 'ready'
+    || (!hasProtectedDelivery && item.mediaContract?.clientPurchasable !== true)
   const contractMessage = item.mediaContract?.userMessage || (productionBlocked ? 'Esta mídia ainda está em preparação.' : 'A entrega protegida depende do acesso comercial.')
 
   return (
@@ -128,7 +138,8 @@ function AudioRow({
 
 export function TabLiveAudio({ atriz, onTocar, onComprar, playingId, purchasingId, player }: Props) {
   const [aba, setAba] = useState<AbaAudio>('stories')
-  const featured = useMemo(() => atriz.liveAudios[0] || null, [atriz.liveAudios])
+  const liveAudios = useMemo(() => atriz.liveAudios.filter(isExplicitLiveAudioItem), [atriz.liveAudios])
+  const featured = useMemo(() => liveAudios[0] || null, [liveAudios])
 
   return (
     <div className="flex h-full gap-6">
@@ -191,10 +202,10 @@ export function TabLiveAudio({ atriz, onTocar, onComprar, playingId, purchasingI
             </div>
 
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto pr-1">
-              {atriz.liveAudios.map((item) => (
+              {liveAudios.map((item) => (
                 <AudioRow key={item.id} atrizNome={atriz.nome} item={item} onTocar={onTocar} onComprar={onComprar} playingId={playingId} purchasingId={purchasingId} player={player} />
               ))}
-              {atriz.liveAudios.length === 0 && (
+              {liveAudios.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 px-4 py-6 text-center">
                   <p className="text-sm font-semibold text-zinc-300">Nenhum Audio Live publicado ainda.</p>
                   <p className="mt-1 text-xs text-zinc-500">Quando o Admin publicar uma narração para esta vitrine, ela aparecerá aqui.</p>

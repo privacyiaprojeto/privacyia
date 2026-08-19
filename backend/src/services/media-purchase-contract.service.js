@@ -1,6 +1,4 @@
-const IMAGE_TYPES = new Set(['image', 'imagem', 'photo', 'foto', 'picture', 'png', 'jpg', 'jpeg', 'webp'])
-const AUDIO_TYPES = new Set(['audio', 'audio_live', 'live_audio', 'audio-live', 'live-audio', 'chat_audio', 'audio_chat', 'tts', 'voice', 'voz'])
-const VIDEO_TYPES = new Set(['video', 'vídeo', 'short_video', 'short-video', 'live_action', 'live-action', 'reel', 'clip'])
+import { normalizeMediaProductType } from './media-product-type.service.js'
 
 const PURCHASE_READY_STATUSES = new Set(['available', 'published', 'approved', 'ready', 'active'])
 const BLOCKED_STATUSES = new Set(['sold', 'reserved', 'qa_pending', 'pending_qa', 'rejected', 'blocked', 'draft', 'archived', 'hidden', 'quarantine', 'deleted'])
@@ -53,34 +51,6 @@ function getMetadataValue(source, ...keys) {
   }
 
   return undefined
-}
-
-function normalizeMediaType(...sources) {
-  const raw = firstValue(
-    ...sources.flatMap((source) => [
-      source?.media_type,
-      source?.mediaType,
-      source?.content_type,
-      source?.contentType,
-      source?.type,
-      source?.asset_type,
-      source?.assetType,
-      source?.delivery_type,
-      source?.deliveryType,
-      getMetadataValue(source, 'media_type', 'mediaType', 'content_type', 'contentType', 'type', 'asset_type', 'assetType')
-    ])
-  )
-
-  const normalized = normalizeText(raw)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '_')
-
-  if (IMAGE_TYPES.has(normalized)) return { raw: raw || null, mediaType: 'image' }
-  if (AUDIO_TYPES.has(normalized)) return { raw: raw || null, mediaType: normalized.includes('chat') ? 'audio_chat' : 'audio_live' }
-  if (VIDEO_TYPES.has(normalized)) return { raw: raw || null, mediaType: normalized.includes('live_action') || normalized.includes('live-action') ? 'live_action' : 'short_video' }
-
-  return { raw: raw || null, mediaType: normalized || 'unknown' }
 }
 
 function hasPublicUrlLeak(...sources) {
@@ -221,7 +191,8 @@ export function buildProtectedPurchaseContract({
   existingDelivery = null,
   clientMediaContract = null,
 } = {}) {
-  const { raw: mediaTypeRaw, mediaType } = normalizeMediaType(asset, combination)
+  const normalizedProduct = normalizeMediaProductType(asset, combination)
+  const { raw: mediaTypeRaw, mediaType } = normalizedProduct
   const ids = resolveIds({ profileId, asset, combination })
   const assetStatus = getAssetStatus(asset, combination)
   const priceCredits = normalizePriceCredits(firstValue(
@@ -293,6 +264,16 @@ export function buildProtectedPurchaseContract({
     reasons: [],
   }
 
+  if (normalizedProduct.conflict) {
+    return buildBlockedContract(
+      base,
+      normalizedProduct.reasonCode || 'MEDIA_PRODUCT_SEMANTIC_CONFLICT',
+      'Esta mídia possui uma configuração de tipo incompatível e não pode ser comprada.',
+      'BLOCKED',
+      [`Semânticas incompatíveis: ${(normalizedProduct.semanticTypes || []).join(', ') || 'desconhecidas'}.`]
+    )
+  }
+
   if (!ids.profileId) {
     return buildBlockedContract(base, 'MISSING_PROFILE_ID', 'Faça login para comprar esta mídia.', 'BLOCKED', ['profileId ausente.'])
   }
@@ -355,11 +336,19 @@ export function buildProtectedPurchaseContract({
     return buildBlockedContract(base, 'PRICE_NOT_CONFIGURED', 'Preço da mídia não configurado para venda.', 'BLOCKED', ['price_credits precisa ser inteiro maior que zero.'])
   }
 
-  if (mediaType === 'short_video' || mediaType === 'live_action') {
-    return buildBlockedContract(base, 'VIDEO_PURCHASE_NOT_ENABLED_YET', 'Esta mídia de vídeo ainda não está disponível para compra.', 'BLOCKED', ['Vídeo/Live Action não tem renderer protegido homologado para compra.'])
+  if (mediaType === 'live_action') {
+    return buildBlockedContract(base, 'LIVE_ACTION_PURCHASE_NOT_READY', 'Live Action interativo ainda não está disponível para compra.', 'BLOCKED', ['O renderer de vídeo genérico não habilita o contrato interativo de Live Action.'])
   }
 
-  if (!(mediaType === 'image' || mediaType === 'audio_live' || mediaType === 'audio_chat')) {
+  if (mediaType === 'audio_live') {
+    return buildBlockedContract(base, 'LIVE_AUDIO_AUDIOVISUAL_PURCHASE_NOT_READY', 'Live Audio audiovisual ainda não está disponível para compra.', 'BLOCKED', ['TTS/áudio isolado não habilita compra do produto audiovisual Live Audio.'])
+  }
+
+  if (mediaType === 'short_video') {
+    return buildBlockedContract(base, 'VIDEO_PURCHASE_NOT_ENABLED_YET', 'Esta mídia de vídeo ainda não está disponível para compra.', 'BLOCKED', ['Compra de vídeo padrão permanece bloqueada independentemente do readiness do renderer protegido.'])
+  }
+
+  if (!(mediaType === 'image' || mediaType === 'audio' || mediaType === 'audio_chat')) {
     return buildBlockedContract(base, 'UNSUPPORTED_MEDIA_TYPE_FOR_PURCHASE', 'Esta mídia ainda não está disponível para compra.', 'BLOCKED', [`Tipo não suportado para compra: ${mediaType}.`])
   }
 
