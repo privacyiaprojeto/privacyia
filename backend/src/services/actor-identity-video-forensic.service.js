@@ -1,22 +1,26 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdtemp, open, rm, stat } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
-import sharp from 'sharp'
 import { supabaseAdmin } from '../config/supabase.js'
+import { env } from '../config/env.js'
 import { ApiError } from '../utils/apiError.js'
 import { downloadPrivateObjectToFile } from './storage.service.js'
 
 const RUNS_TABLE = 'actor_identity_training_runs'
 const ADAPTERS_TABLE = 'actor_identity_adapters'
 const FORENSIC_CONFIRMATION = 'EXECUTAR AUDITORIA FORENSE SEM GPU D3.6H3'
-const AUDIT_SCHEMA_VERSION = 'privacy-identity-video-forensic-audit-v1'
-const FUTURE_VALIDATION_PROFILE = 'video_random_base_ab_v1'
-const IMAGE_SOURCE_SIMILARITY_LIMIT = 0.9
-const IMAGE_DUPLICATE_SIMILARITY_LIMIT = 0.96
-const VIDEO_SOURCE_SIMILARITY_LIMIT = 0.88
+const AUDIT_SCHEMA_VERSION = 'privacy-identity-video-forensic-audit-v2'
+const FUTURE_VALIDATION_PROFILE = 'video_softedge_abc_v1'
+const PREVIEW_CONTRACT_VERSION = 'privacy-identity-motion-abc-v1'
+const QA_KIT_SCHEMA_VERSION = 'privacy-identity-motion-abc-kit-v1'
+const CONTROL_REPRESENTATION = 'softedge_ffmpeg_edgedetect_v1'
+const EXPECTED_ASSET_KEYS = [
+  'baseline_without_identity',
+  'identity_reference_without_lora',
+  'candidate_with_lora',
+]
 
 function text(value) { return String(value || '').trim() }
 function safeObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {} }
@@ -24,11 +28,7 @@ function isSha256(value) { return /^[0-9a-f]{64}$/i.test(text(value)) }
 function isPrivateReference(bucket, key) {
   return Boolean(text(bucket) && text(key) && !/^https?:\/\//i.test(text(bucket)) && !/^https?:\/\//i.test(text(key)) && !text(key).startsWith('/'))
 }
-function prefix(value, size = 12) { return text(value).slice(0, size) || null }
-function round(value, places = 4) {
-  const factor = 10 ** places
-  return Math.round(Number(value || 0) * factor) / factor
-}
+function blocker(code, message, severity = 'critical') { return { code, message, severity } }
 
 async function loadLatestIdentity(actorProfileId) {
   const runResult = await supabaseAdmin
@@ -59,22 +59,24 @@ function visualEvidence(adapter) {
   return safeObject(qaReport.visualEvidence || qaReport.visual_evidence)
 }
 
-function qaAssets(adapter) {
-  const evidence = visualEvidence(adapter)
-  return Array.isArray(safeObject(evidence.qaKit).assets) ? safeObject(evidence.qaKit).assets : []
-}
-
-function selectLegacyD36H2Inputs(run) {
-  const manifest = safeObject(run.dataset_manifest)
-  const assets = Array.isArray(manifest.assets) ? manifest.assets : []
-  const images = assets.filter((item) => item.mediaType === 'image' && isPrivateReference(item.source?.bucket, item.source?.key) && isSha256(item.checksumSha256))
-  const videos = assets.filter((item) => item.mediaType === 'video' && isPrivateReference(item.source?.bucket, item.source?.key) && isSha256(item.checksumSha256))
-  const order = (left, right) => `${left.systemTag || ''}:${left.assetId || ''}`.localeCompare(`${right.systemTag || ''}:${right.assetId || ''}`)
+function publicAuditSnapshot(audit) {
+  const value = safeObject(audit)
   return {
-    image: [...images].sort(order)[0] || null,
-    video: [...videos].sort(order)[0] || null,
-    preferredFaceFront: images.find((item) => text(item.systemTag) === 'face_front') || null,
-    preferredWalkVideo: videos.find((item) => text(item.systemTag) === 'video_walk') || null,
+    schemaVersion: text(value.schemaVersion) || AUDIT_SCHEMA_VERSION,
+    status: text(value.status) || 'not_run',
+    verdict: text(value.verdict) || 'not_evaluated',
+    executedAt: value.executedAt || null,
+    executedByProfileId: value.executedByProfileId || null,
+    blockers: Array.isArray(value.blockers) ? value.blockers.map((item) => ({
+      code: text(item.code),
+      message: text(item.message),
+      severity: text(item.severity) || 'critical',
+    })) : [],
+    adapter: safeObject(value.adapter),
+    sourceLineage: safeObject(value.sourceLineage),
+    similarity: safeObject(value.similarity),
+    futureValidation: safeObject(value.futureValidation),
+    safety: safeObject(value.safety),
   }
 }
 
@@ -88,154 +90,63 @@ async function sha256File(filePath) {
   })
 }
 
-async function parseSafetensorsHeader(filePath) {
-  const handle = await open(filePath, 'r')
-  try {
-    const lengthBuffer = Buffer.alloc(8)
-    const lengthRead = await handle.read(lengthBuffer, 0, 8, 0)
-    if (lengthRead.bytesRead !== 8) throw new Error('header_length_missing')
-    const headerLengthBig = lengthBuffer.readBigUInt64LE(0)
-    if (headerLengthBig <= 0n || headerLengthBig > 64n * 1024n * 1024n) throw new Error('header_length_invalid')
-    const headerLength = Number(headerLengthBig)
-    const headerBuffer = Buffer.alloc(headerLength)
-    const headerRead = await handle.read(headerBuffer, 0, headerLength, 8)
-    if (headerRead.bytesRead !== headerLength) throw new Error('header_incomplete')
-    const parsed = JSON.parse(headerBuffer.toString('utf8'))
-    const tensorKeys = Object.keys(parsed).filter((key) => key !== '__metadata__')
-    const loraKeys = tensorKeys.filter((key) => /(?:lora|adapter)/i.test(key))
-    const targetKeys = tensorKeys.filter((key) => /(?:vace|dit|transformer|blocks)/i.test(key))
-    const metadata = safeObject(parsed.__metadata__)
-    return {
-      valid: tensorKeys.length > 0 && loraKeys.length > 0 && targetKeys.length > 0,
-      tensorCount: tensorKeys.length,
-      loraTensorCount: loraKeys.length,
-      targetTensorCount: targetKeys.length,
-      keySamples: tensorKeys.slice(0, 8),
-      targetFamilies: [...new Set(targetKeys.map((key) => {
-        const normalized = key.toLowerCase()
-        if (normalized.includes('vace')) return 'vace'
-        if (normalized.includes('dit')) return 'dit'
-        if (normalized.includes('transformer')) return 'transformer'
-        return 'blocks'
-      }))],
-      metadataKeys: Object.keys(metadata).slice(0, 20),
+function validateProvenance({ run, adapter, evidence, blockers }) {
+  const qaReport = safeObject(adapter.qa_report)
+  const targetAudit = safeObject(qaReport.trainingTargetAudit)
+  const targetAdapter = safeObject(targetAudit.adapter)
+  const targetCompatibility = safeObject(targetAudit.compatibility)
+  const targetCandidate = safeObject(targetAudit.candidateContract)
+
+  if (text(targetAudit.status) !== 'passed') blockers.push(blocker('TRAINING_TARGET_AUDIT_NOT_PASSED', 'O alvo técnico DiT ainda não está homologado.'))
+  if (targetCompatibility.generalGeneratorIdentityBranchPresent !== true || targetCandidate.paidExecutionApproved !== true) blockers.push(blocker('DIT_TARGET_COMPONENT_NOT_APPROVED', 'O target audit não comprovou o componente geral DiT.'))
+  if (targetCompatibility.newTrainingRequired === true) blockers.push(blocker('TARGET_AUDIT_REQUIRES_NEW_TRAINING', 'O target audit ainda solicita novo treinamento.'))
+  if (targetAdapter.verified !== true || targetAdapter.sha256Matched !== true || targetAdapter.safetensorsHeaderValid !== true) blockers.push(blocker('ADAPTER_TARGET_AUDIT_INTEGRITY_MISSING', 'O target audit não comprova integridade estrutural do adapter.'))
+  if (!Array.isArray(targetAdapter.targetFamilies) || !targetAdapter.targetFamilies.includes('dit')) blockers.push(blocker('ADAPTER_DIT_FAMILY_NOT_PROVEN', 'O target audit não comprova família DiT.'))
+  if (targetAdapter.forbiddenTargetPresent === true || Number(targetAdapter.unknownLoraTensorCount || 0) > 0) blockers.push(blocker('ADAPTER_TARGET_SCOPE_UNSAFE', 'O target audit detectou target proibido ou desconhecido.'))
+
+  if (text(evidence.status) !== 'ready' || evidence.ready !== true || evidence.reviewable !== true) blockers.push(blocker('VISUAL_EVIDENCE_NOT_READY', 'O kit A/B/C ainda não está pronto para auditoria.'))
+  if (text(evidence.contractVersion) !== PREVIEW_CONTRACT_VERSION) blockers.push(blocker('PREVIEW_CONTRACT_MISMATCH', 'A evidência não usa o contrato motion A/B/C homologado.'))
+
+  const qaKit = safeObject(evidence.qaKit)
+  if (text(qaKit.schemaVersion) !== QA_KIT_SCHEMA_VERSION) blockers.push(blocker('QA_KIT_SCHEMA_MISMATCH', 'O kit A/B/C retornou schema incompatível.'))
+
+  const assets = Array.isArray(qaKit.assets) ? qaKit.assets : []
+  const keys = assets.map((item) => text(item.assetKey))
+  if (assets.length !== 3 || EXPECTED_ASSET_KEYS.some((key) => !keys.includes(key))) blockers.push(blocker('QA_KIT_ASSET_SET_INCOMPLETE', 'O kit A/B/C precisa conter exatamente A, B e C.'))
+  for (const item of assets) {
+    if (!isPrivateReference(item.r2Bucket, item.r2Key) || !isSha256(item.sha256) || Number(item.byteSize || 0) <= 0) {
+      blockers.push(blocker('QA_ASSET_PRIVATE_REFERENCE_INVALID', `O asset ${text(item.assetKey) || 'desconhecido'} não possui referência privada íntegra.`))
     }
-  } catch (error) {
-    return {
-      valid: false,
-      tensorCount: 0,
-      loraTensorCount: 0,
-      targetTensorCount: 0,
-      keySamples: [],
-      targetFamilies: [],
-      metadataKeys: [],
-      error: text(error?.message || error).slice(0, 160),
-    }
-  } finally {
-    await handle.close()
   }
-}
 
-async function canonicalPixels(filePath) {
-  return sharp(filePath)
-    .rotate()
-    .resize(64, 64, { fit: 'fill' })
-    .greyscale()
-    .raw()
-    .toBuffer()
-}
+  const provenance = safeObject(qaKit.provenance)
+  const branchA = safeObject(provenance.branch_a)
+  const branchB = safeObject(provenance.branch_b)
+  const branchC = safeObject(provenance.branch_c)
 
-function pixelSimilarity(left, right) {
-  if (!Buffer.isBuffer(left) || !Buffer.isBuffer(right) || left.length !== right.length || left.length === 0) return null
-  let diff = 0
-  for (let index = 0; index < left.length; index += 1) diff += Math.abs(left[index] - right[index])
-  return round(1 - diff / (left.length * 255), 4)
-}
+  if (text(provenance.validation_profile) !== FUTURE_VALIDATION_PROFILE) blockers.push(blocker('VALIDATION_PROFILE_MISMATCH', 'A proveniência não usa o perfil soft-edge A/B/C homologado.'))
+  if (text(provenance.control_representation) !== CONTROL_REPRESENTATION) blockers.push(blocker('CONTROL_REPRESENTATION_NOT_APPROVED', 'O controle não foi comprovado como soft-edge derivado.'))
+  if (provenance.raw_rgb_control_used !== false) blockers.push(blocker('RAW_RGB_CONTROL_FORBIDDEN', 'O contrato atual proíbe controle RGB bruto.'))
+  if (provenance.appearance_reduced_structural_control_used !== true) blockers.push(blocker('APPEARANCE_REDUCED_CONTROL_NOT_PROVEN', 'O uso de controle estrutural com aparência reduzida não foi comprovado.'))
+  if (provenance.same_control_across_branches !== true) blockers.push(blocker('CONTROL_NOT_PAIRED_ACROSS_ABC', 'A/B/C não compartilharam exatamente o mesmo controle estrutural.'))
+  if (provenance.same_seed_across_branches !== true) blockers.push(blocker('SEED_NOT_PAIRED_ACROSS_ABC', 'A/B/C não compartilharam exatamente a mesma seed.'))
+  if (provenance.same_sampler_across_branches !== true) blockers.push(blocker('SAMPLER_NOT_PAIRED_ACROSS_ABC', 'A/B/C não compartilharam o mesmo sampler.'))
+  if (text(provenance.source_motion_sha256).toLowerCase() !== text(env.IDENTITY_LORA_NEUTRAL_QA_SHA256).toLowerCase()) blockers.push(blocker('NEUTRAL_SOURCE_SHA_MISMATCH', 'A origem neutra do controle não corresponde ao SHA homologado.'))
+  if (!isSha256(provenance.derived_control_sha256)) blockers.push(blocker('DERIVED_CONTROL_SHA_MISSING', 'O soft-edge derivado não possui SHA-256 auditável.'))
+  if (text(provenance.derived_control_sha256).toLowerCase() === text(provenance.source_motion_sha256).toLowerCase()) blockers.push(blocker('CONTROL_DERIVATION_NOT_DISTINCT', 'O controle derivado não pode ter o mesmo SHA do vídeo RGB de origem.'))
+  if (text(provenance.workflow_revision) !== 'M4-identity-motion-abc-softedge-v1') blockers.push(blocker('WORKFLOW_REVISION_NOT_APPROVED', 'A proveniência não comprova a revisão motion A/B/C homologada.'))
 
-async function runProcess(command, args, { allowFailure = false } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: true })
-    const stdout = []
-    const stderr = []
-    child.stdout.on('data', (chunk) => stdout.push(chunk))
-    child.stderr.on('data', (chunk) => stderr.push(chunk))
-    child.on('error', (error) => {
-      if (allowFailure) resolve({ ok: false, code: null, stdout: '', stderr: text(error.message) })
-      else reject(error)
-    })
-    child.on('close', (code) => {
-      const result = { ok: code === 0, code, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') }
-      if (code === 0 || allowFailure) resolve(result)
-      else reject(new Error(`${command} exited with ${code}: ${result.stderr.slice(-500)}`))
-    })
-  })
-}
+  if (!(branchA.kyc === false && branchA.trigger === false && branchA.lora === false)) blockers.push(blocker('BRANCH_A_NOT_CLEAN_BASELINE', 'O ramo A precisa permanecer sem KYC, trigger e LoRA.'))
+  if (!(branchB.kyc === true && branchB.trigger === true && branchB.lora === false)) blockers.push(blocker('BRANCH_B_NOT_IDENTITY_REFERENCE', 'O ramo B precisa usar KYC + trigger e manter LoRA desligada.'))
+  if (!(branchC.kyc === true && branchC.trigger === true && branchC.lora === true)) blockers.push(blocker('BRANCH_C_NOT_LORA_CANDIDATE', 'O ramo C precisa ser idêntico ao B, com LoRA ligada.'))
+  if (text(branchB.reference_asset_id) !== text(branchC.reference_asset_id) || text(branchB.reference_sha256).toLowerCase() !== text(branchC.reference_sha256).toLowerCase()) blockers.push(blocker('IDENTITY_REFERENCE_NOT_PAIRED_BC', 'B e C não comprovam a mesma referência KYC.'))
+  if (text(process.env.IDENTITY_LORA_PREVIEW_REFERENCE_ASSET_ID) && text(branchC.reference_asset_id) !== text(process.env.IDENTITY_LORA_PREVIEW_REFERENCE_ASSET_ID)) blockers.push(blocker('REFERENCE_ASSET_NOT_ARMED_ONE', 'A referência KYC não corresponde ao asset explicitamente armado.'))
+  if (text(process.env.IDENTITY_LORA_PREVIEW_REFERENCE_SHA256) && text(branchC.reference_sha256).toLowerCase() !== text(process.env.IDENTITY_LORA_PREVIEW_REFERENCE_SHA256).toLowerCase()) blockers.push(blocker('REFERENCE_SHA_NOT_ARMED_ONE', 'A referência KYC não corresponde ao SHA explicitamente armado.'))
+  if (text(branchB.trigger_token) !== text(branchC.trigger_token) || text(branchC.trigger_token) !== text(run.trigger_token)) blockers.push(blocker('TRIGGER_TOKEN_NOT_PAIRED_BC', 'B e C não comprovam o mesmo trigger token do run.'))
+  if (text(branchC.adapter_sha256).toLowerCase() !== text(adapter.sha256).toLowerCase()) blockers.push(blocker('CANDIDATE_ADAPTER_SHA_MISMATCH', 'O ramo C não comprova o adapter registrado.'))
+  if (Number(branchC.lora_strength) !== 0.65) blockers.push(blocker('LORA_STRENGTH_NOT_APPROVED', 'O ramo C não comprova strength 0.65.'))
 
-async function ffmpegAvailable() {
-  const [ffmpeg, ffprobe] = await Promise.all([
-    runProcess('ffmpeg', ['-version'], { allowFailure: true }),
-    runProcess('ffprobe', ['-version'], { allowFailure: true }),
-  ])
-  return ffmpeg.ok && ffprobe.ok
-}
-
-async function probeDuration(videoPath) {
-  const result = await runProcess('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videoPath])
-  const duration = Number(result.stdout.trim())
-  return Number.isFinite(duration) && duration > 0 ? duration : null
-}
-
-async function extractFrame(videoPath, second, outputPath) {
-  const result = await runProcess('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-ss', String(Math.max(0, second)), '-i', videoPath, '-frames:v', '1', '-vf', 'scale=640:-2', outputPath], { allowFailure: true })
-  if (!result.ok) return false
-  try { return (await stat(outputPath)).size > 0 } catch { return false }
-}
-
-async function compareVideos(sourcePath, outputPath, tempRoot) {
-  if (!await ffmpegAvailable()) return { available: false, reason: 'FFMPEG_NOT_AVAILABLE', samples: [], averageSimilarity: null }
-  const [sourceDuration, outputDuration] = await Promise.all([probeDuration(sourcePath), probeDuration(outputPath)])
-  if (!sourceDuration || !outputDuration) return { available: false, reason: 'VIDEO_DURATION_UNAVAILABLE', samples: [], averageSimilarity: null }
-  const positions = [0.1, 0.5, 0.9]
-  const samples = []
-  for (let index = 0; index < positions.length; index += 1) {
-    const position = positions[index]
-    const sourceFrame = path.join(tempRoot, `source-${index}.png`)
-    const outputFrame = path.join(tempRoot, `output-${index}.png`)
-    const [sourceOk, outputOk] = await Promise.all([
-      extractFrame(sourcePath, Math.max(0, sourceDuration * position - 0.05), sourceFrame),
-      extractFrame(outputPath, Math.max(0, outputDuration * position - 0.05), outputFrame),
-    ])
-    if (!sourceOk || !outputOk) continue
-    const [sourcePixels, outputPixels] = await Promise.all([canonicalPixels(sourceFrame), canonicalPixels(outputFrame)])
-    samples.push({ position, similarity: pixelSimilarity(sourcePixels, outputPixels) })
-  }
-  const comparable = samples.map((item) => item.similarity).filter((value) => typeof value === 'number')
-  return {
-    available: comparable.length > 0,
-    sourceDuration: round(sourceDuration, 3),
-    outputDuration: round(outputDuration, 3),
-    samples,
-    averageSimilarity: comparable.length ? round(comparable.reduce((sum, value) => sum + value, 0) / comparable.length, 4) : null,
-  }
-}
-
-function blocker(code, message, severity = 'critical') { return { code, message, severity } }
-
-function publicAuditSnapshot(audit) {
-  const value = safeObject(audit)
-  return {
-    schemaVersion: text(value.schemaVersion) || AUDIT_SCHEMA_VERSION,
-    status: text(value.status) || 'not_run',
-    verdict: text(value.verdict) || 'not_evaluated',
-    executedAt: value.executedAt || null,
-    executedByProfileId: value.executedByProfileId || null,
-    blockers: Array.isArray(value.blockers) ? value.blockers.map((item) => ({ code: text(item.code), message: text(item.message), severity: text(item.severity) || 'critical' })) : [],
-    adapter: safeObject(value.adapter),
-    sourceLineage: safeObject(value.sourceLineage),
-    similarity: safeObject(value.similarity),
-    futureValidation: safeObject(value.futureValidation),
-    safety: safeObject(value.safety),
-  }
+  return { qaKit, assets, provenance, targetAdapter }
 }
 
 export async function inspectActorIdentityVideoForensicReadiness(actorProfileId) {
@@ -243,14 +154,14 @@ export async function inspectActorIdentityVideoForensicReadiness(actorProfileId)
   const evidence = visualEvidence(adapter)
   const audit = publicAuditSnapshot(evidence.forensicAudit)
   return {
-    status: 'STAGE_2_2D3_6H3_VIDEO_FORENSIC_READINESS',
+    status: 'M4_IDENTITY_MOTION_ABC_FORENSIC_READINESS',
     actorProfileId,
     trainingRunId: run.id,
     adapterId: adapter.id,
     previewStatus: text(evidence.status) || 'not_started',
-    assetCount: qaAssets(adapter).length,
+    assetCount: Array.isArray(safeObject(evidence.qaKit).assets) ? safeObject(evidence.qaKit).assets.length : 0,
     forensicAudit: audit,
-    nextPaidTestAllowed: audit.status === 'passed' && safeObject(audit.futureValidation).nextPaidTestAllowed === true,
+    nextPaidTestAllowed: false,
     safety: { databaseReadExecuted: true, databaseMutationExecuted: false, r2ReadExecuted: false, runPodCalled: false, gpuStarted: false, destructiveDelete: false },
   }
 }
@@ -261,143 +172,93 @@ export async function runActorIdentityVideoForensicAudit(actorProfileId, { reque
 
   const { run, adapter } = await loadLatestIdentity(actorProfileId)
   const evidence = visualEvidence(adapter)
-  const assets = qaAssets(adapter)
-  const inputs = selectLegacyD36H2Inputs(run)
   const blockers = []
+  const { qaKit, assets, provenance, targetAdapter } = validateProvenance({ run, adapter, evidence, blockers })
 
-  if (!inputs.image) blockers.push(blocker('REFERENCE_IMAGE_MISSING', 'Nenhuma imagem privada do mapeamento foi localizada para reconstruir a linhagem do D3.6H2.'))
-  if (!inputs.video) blockers.push(blocker('CONTROL_VIDEO_MISSING', 'Nenhum vídeo privado do mapeamento foi localizado para reconstruir a linhagem do D3.6H2.'))
-  if (text(inputs.image?.systemTag) !== 'face_front') blockers.push(blocker('REFERENCE_IMAGE_NOT_FACE_FRONT', `O D3.6H2 selecionou a imagem ${text(inputs.image?.systemTag) || 'sem categoria'} em vez da foto frontal do rosto.`))
-  if (inputs.video) blockers.push(blocker('ACTOR_MAPPING_USED_AS_RAW_CONTROL_VIDEO', 'O vídeo do próprio mapeamento foi usado como controle RGB integral, impedindo provar a criação em um vídeo-base aleatório.'))
-  blockers.push(blocker('RANDOM_BASE_VIDEO_NOT_USED', 'O kit atual não utilizou um vídeo-base aleatório e independente do mapeamento do ator.'))
-  blockers.push(blocker('BASELINE_WITHOUT_LORA_MISSING', 'Não existe saída de comparação com a mesma seed e o adapter desligado.'))
-  if (assets.length !== 4) blockers.push(blocker('QA_KIT_ASSET_SET_INCOMPLETE', `Foram encontradas ${assets.length} evidências; o kit D3.6H2 esperava quatro.`))
-
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'privacy-identity-forensic-'))
-  let adapterAudit = { verified: false, sha256Matched: false, byteSizeMatched: false, safetensorsHeaderValid: false, tensorCount: 0, loraTensorCount: 0, targetTensorCount: 0, targetFamilies: [], sha256Prefix: prefix(adapter.sha256), byteSize: Number(adapter.byte_size || 0) }
-  const imageComparisons = []
-  let videoComparison = { available: false, reason: 'NOT_EXECUTED', samples: [], averageSimilarity: null }
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'privacy-identity-motion-abc-forensic-'))
+  const assetIntegrity = []
   let r2ReadCount = 0
-
   try {
-    const adapterPath = path.join(tempRoot, 'adapter.safetensors')
-    await downloadPrivateObjectToFile({ bucket: adapter.r2_bucket, key: adapter.r2_key, filePath: adapterPath })
-    r2ReadCount += 1
-    const [actualSha256, adapterStat, header] = await Promise.all([sha256File(adapterPath), stat(adapterPath), parseSafetensorsHeader(adapterPath)])
-    adapterAudit = {
-      verified: true,
-      sha256Matched: actualSha256 === text(adapter.sha256).toLowerCase(),
-      byteSizeMatched: Number(adapterStat.size) === Number(adapter.byte_size),
-      safetensorsHeaderValid: header.valid === true,
-      tensorCount: Number(header.tensorCount || 0),
-      loraTensorCount: Number(header.loraTensorCount || 0),
-      targetTensorCount: Number(header.targetTensorCount || 0),
-      targetFamilies: header.targetFamilies || [],
-      keySamples: header.keySamples || [],
-      metadataKeys: header.metadataKeys || [],
-      sha256Prefix: actualSha256.slice(0, 12),
-      byteSize: Number(adapterStat.size),
-    }
-    if (!adapterAudit.sha256Matched) blockers.push(blocker('ADAPTER_SHA256_MISMATCH', 'O checksum real do adapter privado não corresponde ao registro do banco.'))
-    if (!adapterAudit.byteSizeMatched) blockers.push(blocker('ADAPTER_BYTE_SIZE_MISMATCH', 'O tamanho real do adapter privado não corresponde ao registro do banco.'))
-    if (!adapterAudit.safetensorsHeaderValid) blockers.push(blocker('ADAPTER_SAFETENSORS_STRUCTURE_INVALID', 'O arquivo existe, mas o cabeçalho não comprovou tensores LoRA ligados ao runtime de vídeo.'))
-
-    if (inputs.image) {
-      const referencePath = path.join(tempRoot, 'legacy-reference-image')
-      await downloadPrivateObjectToFile({ bucket: inputs.image.source.bucket, key: inputs.image.source.key, filePath: referencePath })
+    for (const item of assets) {
+      if (!isPrivateReference(item.r2Bucket, item.r2Key) || !isSha256(item.sha256) || Number(item.byteSize || 0) <= 0) continue
+      const filePath = path.join(tempRoot, `${text(item.assetKey) || 'asset'}.mp4`)
+      await downloadPrivateObjectToFile({ bucket: item.r2Bucket, key: item.r2Key, filePath })
       r2ReadCount += 1
-      const referencePixels = await canonicalPixels(referencePath)
-      const imageAssets = assets.filter((item) => text(item.kind) === 'image')
-      const outputPixels = new Map()
-      for (const item of imageAssets) {
-        const outputPath = path.join(tempRoot, `${text(item.assetKey) || 'image'}.bin`)
-        await downloadPrivateObjectToFile({ bucket: item.r2Bucket, key: item.r2Key, filePath: outputPath })
-        r2ReadCount += 1
-        const pixels = await canonicalPixels(outputPath)
-        outputPixels.set(text(item.assetKey), pixels)
-        imageComparisons.push({ left: 'mapping_reference', right: text(item.assetKey), similarity: pixelSimilarity(referencePixels, pixels), relation: 'source_to_output' })
-      }
-      const entries = [...outputPixels.entries()]
-      for (let leftIndex = 0; leftIndex < entries.length; leftIndex += 1) {
-        for (let rightIndex = leftIndex + 1; rightIndex < entries.length; rightIndex += 1) {
-          imageComparisons.push({ left: entries[leftIndex][0], right: entries[rightIndex][0], similarity: pixelSimilarity(entries[leftIndex][1], entries[rightIndex][1]), relation: 'output_to_output' })
-        }
-      }
-    }
-
-    if (inputs.video) {
-      const outputVideo = assets.find((item) => text(item.kind) === 'video')
-      if (outputVideo) {
-        const sourceVideoPath = path.join(tempRoot, 'legacy-control-video.mp4')
-        const outputVideoPath = path.join(tempRoot, 'qa-output-video.mp4')
-        await Promise.all([
-          downloadPrivateObjectToFile({ bucket: inputs.video.source.bucket, key: inputs.video.source.key, filePath: sourceVideoPath }),
-          downloadPrivateObjectToFile({ bucket: outputVideo.r2Bucket, key: outputVideo.r2Key, filePath: outputVideoPath }),
-        ])
-        r2ReadCount += 2
-        videoComparison = await compareVideos(sourceVideoPath, outputVideoPath, tempRoot)
-      }
+      const [actualSha256, fileStat] = await Promise.all([sha256File(filePath), stat(filePath)])
+      const sha256Matched = actualSha256 === text(item.sha256).toLowerCase()
+      const byteSizeMatched = Number(fileStat.size) === Number(item.byteSize)
+      assetIntegrity.push({ assetKey: text(item.assetKey), sha256Matched, byteSizeMatched, sha256Prefix: actualSha256.slice(0, 12), byteSize: Number(fileStat.size) })
+      if (!sha256Matched) blockers.push(blocker('QA_ASSET_SHA256_MISMATCH', `Checksum divergente no asset ${text(item.assetKey)}.`))
+      if (!byteSizeMatched) blockers.push(blocker('QA_ASSET_BYTE_SIZE_MISMATCH', `Tamanho divergente no asset ${text(item.assetKey)}.`))
     }
   } finally {
     await rm(tempRoot, { recursive: true, force: true })
   }
 
-  const sourceImageSimilarities = imageComparisons.filter((item) => item.relation === 'source_to_output' && typeof item.similarity === 'number').map((item) => item.similarity)
-  const duplicateSimilarities = imageComparisons.filter((item) => item.relation === 'output_to_output' && typeof item.similarity === 'number').map((item) => item.similarity)
-  const maxSourceSimilarity = sourceImageSimilarities.length ? Math.max(...sourceImageSimilarities) : null
-  const maxOutputPairSimilarity = duplicateSimilarities.length ? Math.max(...duplicateSimilarities) : null
-  if (maxSourceSimilarity != null && maxSourceSimilarity >= IMAGE_SOURCE_SIMILARITY_LIMIT) blockers.push(blocker('SOURCE_RECONSTRUCTION_DETECTED', `As imagens do kit ficaram excessivamente próximas da foto do mapeamento (${round(maxSourceSimilarity * 100, 1)}% de similaridade canônica).`))
-  if (maxOutputPairSimilarity != null && maxOutputPairSimilarity >= IMAGE_DUPLICATE_SIMILARITY_LIMIT) blockers.push(blocker('DUPLICATE_QA_IMAGES_DETECTED', `As imagens apresentadas como cenas diferentes ficaram praticamente iguais (${round(maxOutputPairSimilarity * 100, 1)}% de similaridade canônica).`))
-  if (videoComparison.available && Number(videoComparison.averageSimilarity) >= VIDEO_SOURCE_SIMILARITY_LIMIT) blockers.push(blocker('CONTROL_DOMINATED_VIDEO_DETECTED', `O vídeo gerado preservou excessivamente o vídeo do mapeamento (${round(Number(videoComparison.averageSimilarity) * 100, 1)}% de similaridade média entre quadros).`))
-
   const uniqueBlockers = [...new Map(blockers.map((item) => [item.code, item])).values()]
   const auditStatus = uniqueBlockers.some((item) => item.severity === 'critical') ? 'failed' : 'passed'
   const now = new Date().toISOString()
+  const adapterSnapshot = {
+    verified: targetAdapter.verified === true,
+    sha256Matched: targetAdapter.sha256Matched === true,
+    byteSizeMatched: targetAdapter.byteSizeMatched === true,
+    safetensorsHeaderValid: targetAdapter.safetensorsHeaderValid === true,
+    loraTensorCount: Number(targetAdapter.loraTensorCount || 0),
+    targetFamilies: Array.isArray(targetAdapter.targetFamilies) ? targetAdapter.targetFamilies : [],
+    approvedScopeTensorCount: Number(targetAdapter.approvedScopeTensorCount || 0),
+    unknownLoraTensorCount: Number(targetAdapter.unknownLoraTensorCount || 0),
+    forbiddenTargetPresent: targetAdapter.forbiddenTargetPresent === true,
+    sha256Prefix: text(targetAdapter.sha256Prefix) || text(adapter.sha256).slice(0, 12),
+  }
+
+  const futureValidation = {
+    profile: FUTURE_VALIDATION_PROFILE,
+    targetUseCases: ['identity_video_validation', 'video_v2v'],
+    independentNeutralMotionSourceUsed: text(provenance.source_motion_sha256).toLowerCase() === text(env.IDENTITY_LORA_NEUTRAL_QA_SHA256).toLowerCase(),
+    controlRepresentation: text(provenance.control_representation),
+    appearanceReducedStructuralControlUsed: provenance.appearance_reduced_structural_control_used === true,
+    rawRgbControlUsed: provenance.raw_rgb_control_used === true,
+    sameControlAcrossBranches: provenance.same_control_across_branches === true,
+    sameSeedAcrossBranches: provenance.same_seed_across_branches === true,
+    sameSamplerAcrossBranches: provenance.same_sampler_across_branches === true,
+    baselineWithoutIdentityAvailable: assets.some((item) => text(item.assetKey) === 'baseline_without_identity'),
+    identityReferenceWithoutLoraAvailable: assets.some((item) => text(item.assetKey) === 'identity_reference_without_lora'),
+    candidateWithLoraAvailable: assets.some((item) => text(item.assetKey) === 'candidate_with_lora'),
+    loraIsolationComparisonAvailable: assets.some((item) => text(item.assetKey) === 'identity_reference_without_lora') && assets.some((item) => text(item.assetKey) === 'candidate_with_lora'),
+    visualReviewAllowed: auditStatus === 'passed',
+    nextPaidTestAllowed: false,
+    reason: auditStatus === 'passed'
+      ? 'Proveniência A/B/C validada. A aprovação continua dependente de revisão visual humana de B versus C.'
+      : 'A evidência A/B/C falhou na auditoria de proveniência e permanece bloqueada.',
+  }
+
   const audit = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
     status: auditStatus,
-    verdict: auditStatus === 'passed' ? 'video_identity_evidence_valid' : 'invalid_evidence_adapter_unproven',
+    verdict: auditStatus === 'passed' ? 'softedge_abc_provenance_verified' : 'softedge_abc_provenance_not_verified',
     executedAt: now,
     executedByProfileId: requestedByProfileId || null,
     mode: 'private_cpu_no_gpu',
-    adapter: adapterAudit,
+    adapter: adapterSnapshot,
     sourceLineage: {
-      referenceImageAssetId: inputs.image?.assetId || null,
-      referenceImageSystemTag: text(inputs.image?.systemTag) || null,
-      referenceImageChecksumPrefix: prefix(inputs.image?.checksumSha256),
-      preferredFaceFrontAssetId: inputs.preferredFaceFront?.assetId || null,
-      controlVideoAssetId: inputs.video?.assetId || null,
-      controlVideoSystemTag: text(inputs.video?.systemTag) || null,
-      controlVideoChecksumPrefix: prefix(inputs.video?.checksumSha256),
-      preferredWalkVideoAssetId: inputs.preferredWalkVideo?.assetId || null,
-      actorMappingUsedAsRawRgbControl: Boolean(inputs.video),
-      randomBaseVideoUsed: false,
+      previewContractVersion: text(evidence.contractVersion),
+      qaKitSchemaVersion: text(qaKit.schemaVersion),
+      validationProfile: text(provenance.validation_profile),
+      controlRepresentation: text(provenance.control_representation),
+      sourceMotionSha256Prefix: text(provenance.source_motion_sha256).slice(0, 12) || null,
+      derivedControlSha256Prefix: text(provenance.derived_control_sha256).slice(0, 12) || null,
+      referenceAssetId: text(safeObject(provenance.branch_c).reference_asset_id) || null,
+      referenceSha256Prefix: text(safeObject(provenance.branch_c).reference_sha256).slice(0, 12) || null,
+      adapterSha256Prefix: text(safeObject(provenance.branch_c).adapter_sha256).slice(0, 12) || null,
     },
     similarity: {
-      imageComparisons,
-      maxSourceSimilarity: maxSourceSimilarity == null ? null : round(maxSourceSimilarity, 4),
-      maxOutputPairSimilarity: maxOutputPairSimilarity == null ? null : round(maxOutputPairSimilarity, 4),
-      video: videoComparison,
-      thresholds: {
-        imageSourceSimilarityLimit: IMAGE_SOURCE_SIMILARITY_LIMIT,
-        imageDuplicateSimilarityLimit: IMAGE_DUPLICATE_SIMILARITY_LIMIT,
-        videoSourceSimilarityLimit: VIDEO_SOURCE_SIMILARITY_LIMIT,
-      },
+      automatedIdentitySimilarityDecision: false,
+      humanVisualReviewRequired: true,
+      comparisonPriority: 'B_vs_C',
+      assetIntegrity,
     },
     blockers: uniqueBlockers,
-    futureValidation: {
-      profile: FUTURE_VALIDATION_PROFILE,
-      targetUseCases: ['prompt_to_video', 'random_base_video_v2v'],
-      requiresRandomBaseVideo: true,
-      requiresMotionOnlyControl: true,
-      actorMappingRawRgbControlAllowed: false,
-      requiresFaceFrontReference: true,
-      requiresSameSeedBaselineWithoutLora: true,
-      requiresCandidateWithLora: true,
-      requiresSingleControlledJob: true,
-      nextPaidTestAllowed: false,
-      reason: 'O próximo teste pago permanece bloqueado até existir um contrato de vídeo A/B com vídeo-base aleatório, controle de movimento sem aparência e verificação estática completa.',
-    },
+    futureValidation,
     safety: {
       databaseReadExecuted: true,
       databaseMutationExecuted: Boolean(persist),
@@ -425,11 +286,13 @@ export async function runActorIdentityVideoForensicAudit(actorProfileId, { reque
         status: 'invalid',
         ready: false,
         reviewable: false,
-        failureCode: 'CONTROL_DOMINATED_OUTPUT',
-        operatorMessage: 'Kit D3.6H2 invalidado: ele reutilizou materiais do mapeamento como controle visual e não comprovou a identidade em vídeo-base aleatório.',
+        failureCode: 'MOTION_ABC_FORENSIC_FAILED',
+        operatorMessage: 'Kit A/B/C invalidado pela auditoria de proveniência. Nenhuma aprovação foi realizada.',
         invalidatedAt: now,
-        invalidationReason: 'CONTROL_DOMINATED_OUTPUT',
-      } : {}),
+        invalidationReason: 'MOTION_ABC_FORENSIC_FAILED',
+      } : {
+        operatorMessage: 'Kit A/B/C com proveniência validada. Compare B versus C antes da decisão humana.',
+      }),
     }
     const update = await supabaseAdmin
       .from(ADAPTERS_TABLE)
@@ -437,23 +300,28 @@ export async function runActorIdentityVideoForensicAudit(actorProfileId, { reque
       .eq('id', adapter.id)
       .eq('actor_profile_id', actorProfileId)
       .eq('training_run_id', run.id)
-      .select('id')
+      .select('id, status, qa_status')
       .single()
     if (update.error) throw new ApiError(500, 'Erro ao registrar a auditoria forense da identidade.', update.error)
+    if (text(update.data?.status) !== 'qa_pending' || text(update.data?.qa_status) !== 'pending') throw new ApiError(409, 'A auditoria foi registrada, mas o adapter deixou de permanecer em qa_pending.')
   }
 
   return {
-    status: auditStatus === 'passed' ? 'STAGE_2_2D3_6H3_VIDEO_FORENSIC_AUDIT_PASSED' : 'STAGE_2_2D3_6H3_VIDEO_FORENSIC_AUDIT_FAILED_SAFE',
+    status: auditStatus === 'passed' ? 'M4_IDENTITY_MOTION_ABC_FORENSIC_PASSED' : 'M4_IDENTITY_MOTION_ABC_FORENSIC_FAILED_SAFE',
     actorProfileId,
     trainingRunId: run.id,
     adapterId: adapter.id,
     forensicAudit: publicAuditSnapshot(audit),
     nextPaidTestAllowed: false,
     nextAction: auditStatus === 'passed'
-      ? 'Manter a identidade em revisão e preparar o contrato final de vídeo A/B sem executar GPU.'
-      : 'Preservar o adapter em qa_pending. Corrigir o contrato de validação antes de qualquer novo teste pago.',
+      ? 'Comparar visualmente B versus C. A aprovação continua manual e não libera produção automaticamente.'
+      : 'Preservar o adapter em qa_pending e corrigir apenas a evidência/proveniência comprovadamente inválida.',
     safety: audit.safety,
   }
 }
 
-export { FORENSIC_CONFIRMATION as IDENTITY_VIDEO_FORENSIC_CONFIRMATION, FUTURE_VALIDATION_PROFILE }
+export {
+  FORENSIC_CONFIRMATION as IDENTITY_VIDEO_FORENSIC_CONFIRMATION,
+  FUTURE_VALIDATION_PROFILE,
+  CONTROL_REPRESENTATION,
+}

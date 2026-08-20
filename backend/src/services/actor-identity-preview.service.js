@@ -58,7 +58,7 @@ async function loadLatestIdentity(actorProfileId) {
   return { run: runResult.data, adapter: adapterResult.data }
 }
 
-// D3.6H12 — explicit KYC + dynamic trigger token + raw RGB V2V denoise 0.85
+// M4 HF — explicit face_front KYC + trigger token + appearance-reduced soft-edge A/B/C
 function selectPreviewInputs(run) {
   const manifest = safeObject(run.dataset_manifest)
   const assets = Array.isArray(manifest.assets) ? manifest.assets : []
@@ -120,7 +120,7 @@ function previewSnapshot(adapter) {
     providerJobIdConfigured: Boolean(text(evidence.providerJobId)), providerJobIdPrefix: text(evidence.providerJobId).slice(0, 12) || null,
     requestedAt: evidence.requestedAt || null, startedAt: evidence.startedAt || null, completedAt: evidence.completedAt || null,
     lastCheckedAt: evidence.lastCheckedAt || null, failedAt: evidence.failedAt || null, message: text(evidence.operatorMessage) || null,
-    mediaAvailable: assets.length === 2 && assets.every((item) => item.mediaAvailable), assetCount: assets.length, assets,
+    mediaAvailable: assets.length === 3 && assets.every((item) => item.mediaAvailable), assetCount: assets.length, assets,
     width: Number(evidence.width || 0) || null, height: Number(evidence.height || 0) || null,
     numFrames: Number(evidence.numFrames || 0) || null, fps: Number(evidence.fps || 0) || null,
     durationSeconds: Number(evidence.durationSeconds || 0) || null, failureCode: text(evidence.failureCode) || null,
@@ -142,8 +142,26 @@ function previewSnapshot(adapter) {
   }
 }
 
+
+function assertTrainingTargetReadyForPreview(adapter) {
+  const qaReport = safeObject(adapter.qa_report)
+  const audit = safeObject(qaReport.trainingTargetAudit)
+  const compatibility = safeObject(audit.compatibility)
+  const candidate = safeObject(audit.candidateContract)
+  if (
+    text(audit.status) !== 'passed'
+    || compatibility.generalGeneratorIdentityBranchPresent !== true
+    || candidate.paidExecutionApproved !== true
+    || compatibility.newTrainingRequired === true
+  ) {
+    throw new ApiError(409, 'O alvo DiT do adapter ainda não está homologado para a prévia controlada A/B/C.')
+  }
+  return audit
+}
+
 async function compileContract(run, adapter, policy) {
   if (!isPrivateReference(adapter.r2_bucket, adapter.r2_key) || !isSha256(adapter.sha256) || Number(adapter.byte_size || 0) <= 0) throw new ApiError(409, 'O arquivo final da identidade não passou pela verificação de integridade.')
+
   const neutralBucket = text(env.IDENTITY_LORA_NEUTRAL_QA_BUCKET)
   const neutralKey = text(env.IDENTITY_LORA_NEUTRAL_QA_KEY)
   const neutralSha256 = text(env.IDENTITY_LORA_NEUTRAL_QA_SHA256).toLowerCase()
@@ -157,24 +175,70 @@ async function compileContract(run, adapter, policy) {
 
   const triggerToken = text(run.trigger_token)
   if (!/^prv_actor_[a-z0-9_]+$/.test(triggerToken)) throw new ApiError(409, 'O run não possui trigger token identitário válido.')
-  const positiveA = 'adult man walking naturally in a neutral studio, full body visible, stable camera, realistic skin texture, consistent anatomy, clean background'
-  const positiveB = `${triggerToken}, adult man walking naturally in a neutral studio, full body visible, stable camera, realistic skin texture, consistent anatomy, clean background, preserve the mapped male identity and facial proportions`
+
+  const positiveA = 'adult person walking naturally in a neutral studio, full body visible, stable camera, realistic anatomy, clean background'
+  const positiveIdentity = `${triggerToken}, adult person walking naturally in a neutral studio, full body visible, stable camera, realistic anatomy, clean background, preserve the mapped identity and facial proportions`
 
   return {
     contract_version: IDENTITY_PREVIEW_CONTRACT_VERSION,
-    execution_mode: 'controlled_identity_neutral_ab',
-    request_id: `identity-neutral-ab-${randomUUID()}`,
-    actor_profile_id: run.actor_profile_id, training_run_id: run.id, adapter_id: adapter.id,
+    execution_mode: 'controlled_identity_motion_abc',
+    request_id: `identity-motion-abc-${randomUUID()}`,
+    actor_profile_id: run.actor_profile_id,
+    training_run_id: run.id,
+    adapter_id: adapter.id,
     base_video: { bucket: neutralBucket, key: neutralKey, sha256: neutralSha256 },
     reference_image: { bucket: referenceBucket, key: referenceKey, sha256: referenceSha256, system_tag: 'face_front', asset_id: requiredAssetId },
     identity: { trigger_token: triggerToken, reference_asset_id: requiredAssetId, reference_sha256: referenceSha256 },
     adapter: { bucket: adapter.r2_bucket, key: adapter.r2_key, sha256: text(adapter.sha256).toLowerCase(), byte_size: Number(adapter.byte_size) },
-    sampling: { seed: 99, width: 832, height: 480, fps: 16, frames: 17, steps: 30, denoise: 0.85, branch_b_denoise: 0.85, lora_strength: 0.65 },
-    prompt: { positive: positiveA, positive_b: positiveB, negative: 'identity mismatch, wrong person, feminine appearance, deformed face, deformed eyes, deformed hands, extra fingers, blur, low resolution, artifacts, text, watermark, cropped head' },
-    metadata: { workflow_revision: 'D3.6H12-trigger-token-raw-rgb-v2v-denoise-085-v1', methodology_hotfix: 'D3.6H12-HF2-paired-denoise-085-v1', branch_b_control_mode: 'raw_rgb_v2v_denoise_085', branch_a_denoise: 0.85, branch_b_denoise: 0.85, ab_denoise_paired: true, trigger_token_used: triggerToken, reference_asset_id: requiredAssetId, reference_sha256: referenceSha256 },
+    control: {
+      representation: 'softedge_ffmpeg_edgedetect_v1',
+      derive_from_base_video: true,
+      raw_rgb_control_allowed: false,
+      same_control_all_branches: true,
+    },
+    sampling: {
+      seed: 99,
+      width: 832,
+      height: 480,
+      fps: 16,
+      frames: 17,
+      steps: 30,
+      denoise: 0.85,
+      branch_b_denoise: 0.85,
+      branch_c_denoise: 0.85,
+      lora_strength: 0.65,
+    },
+    prompt: {
+      positive: positiveA,
+      positive_identity: positiveIdentity,
+      negative: 'identity mismatch, wrong person, deformed face, deformed eyes, deformed hands, extra fingers, blur, low resolution, artifacts, text, watermark, cropped head',
+    },
+    metadata: {
+      validation_profile: 'video_softedge_abc_v1',
+      workflow_revision: 'M4-identity-motion-abc-softedge-v1',
+      methodology_hotfix: 'M4-HF-softedge-abc-lora-isolation-v1',
+      control_representation: 'softedge_ffmpeg_edgedetect_v1',
+      raw_rgb_control_allowed: false,
+      same_control_all_branches: true,
+      same_seed_all_branches: true,
+      trigger_token_used: triggerToken,
+      reference_asset_id: requiredAssetId,
+      reference_sha256: referenceSha256,
+    },
     output: { bucket: text(env.IDENTITY_LORA_PRIVATE_BUCKET || env.R2_BUCKET_NAME), prefix: `${text(env.IDENTITY_LORA_PREVIEW_OUTPUT_PREFIX)}/${run.actor_profile_id}/${run.id}/${adapter.id}`, public: false },
     smoke: { enabled: true, one_shot: true, actor_profile_id: run.actor_profile_id, training_run_id: run.id, adapter_id: adapter.id, expires_at: policy.expiresAt, max_jobs: 1 },
-    safety: { private_storage_only: true, public_urls_forbidden: true, automatic_retry_allowed: false, one_shot_smoke: true, kyc_reference_required: true, kyc_reference_private_only: true, kyc_reference_branch_b_only: true, kyc_reference_persistence_forbidden: true, product_release_allowed: false },
+    safety: {
+      private_storage_only: true,
+      public_urls_forbidden: true,
+      automatic_retry_allowed: false,
+      one_shot_smoke: true,
+      kyc_reference_required: true,
+      kyc_reference_private_only: true,
+      kyc_reference_baseline_forbidden: true,
+      kyc_reference_identity_branches_only: true,
+      kyc_reference_persistence_forbidden: true,
+      product_release_allowed: false,
+    },
   }
 }
 
@@ -201,6 +265,7 @@ export async function startActorIdentityPreview(actorProfileId, { requestedByPro
   const { run, adapter } = await loadLatestIdentity(actorProfileId)
   if (!['training_completed', 'qa_pending', 'approved'].includes(text(run.status))) throw new ApiError(409, 'A identidade ainda não terminou de ser criada.')
   if (['rejected', 'revoked'].includes(text(adapter.status)) || ['rejected'].includes(text(adapter.qa_status))) throw new ApiError(409, 'Esta identidade exige correção antes de preparar uma prévia.')
+  assertTrainingTargetReadyForPreview(adapter)
   const current = visualEvidence(adapter)
   if (current.ready === true || ACTIVE.has(text(current.status))) {
     return { status: 'IDENTITY_PREVIEW_ALREADY_EXISTS', adapterId: adapter.id, preview: previewSnapshot(adapter), message: current.ready === true ? 'A prévia privada já está pronta.' : 'A prévia privada já está sendo preparada.' }
@@ -269,8 +334,33 @@ export async function refreshActorIdentityPreviewStatus(actorProfileId) {
     if (text(output.contract_version) !== IDENTITY_PREVIEW_CONTRACT_VERSION) throw new ApiError(502, 'O worker retornou um contrato de kit incompatível.')
     if (text(kit.actor_profile_id) !== actorProfileId || text(kit.training_run_id) !== run.id || text(kit.adapter_id) !== adapter.id) throw new ApiError(502, 'O kit retornado não pertence à identidade solicitada.')
     const providerAssets = Array.isArray(kit.assets) ? kit.assets : []
-    const expectedKeys = ['baseline_without_lora', 'candidate_with_lora']
-    if (providerAssets.length !== 2 || expectedKeys.some((key) => !providerAssets.some((item) => text(item.asset_key) === key))) throw new ApiError(502, 'O worker não retornou as duas evidências A/B obrigatórias.')
+    const expectedKeys = ['baseline_without_identity', 'identity_reference_without_lora', 'candidate_with_lora']
+    if (providerAssets.length !== 3 || expectedKeys.some((key) => !providerAssets.some((item) => text(item.asset_key) === key))) throw new ApiError(502, 'O worker não retornou as três evidências A/B/C obrigatórias.')
+    if (text(kit.schema_version) !== 'privacy-identity-motion-abc-kit-v1') throw new ApiError(502, 'O worker retornou schema A/B/C incompatível.')
+    const loraAttestation = safeObject(kit.lora_attestation)
+    const provenance = safeObject(kit.provenance)
+    const branchA = safeObject(provenance.branch_a)
+    const branchB = safeObject(provenance.branch_b)
+    const branchC = safeObject(provenance.branch_c)
+    const provenanceValid = Boolean(
+      text(provenance.validation_profile) === 'video_softedge_abc_v1'
+      && text(provenance.control_representation) === 'softedge_ffmpeg_edgedetect_v1'
+      && text(provenance.source_motion_sha256).toLowerCase() === text(env.IDENTITY_LORA_NEUTRAL_QA_SHA256).toLowerCase()
+      && isSha256(provenance.derived_control_sha256)
+      && provenance.raw_rgb_control_used === false
+      && provenance.appearance_reduced_structural_control_used === true
+      && provenance.same_control_across_branches === true
+      && provenance.same_seed_across_branches === true
+      && branchA.kyc === false && branchA.trigger === false && branchA.lora === false
+      && branchB.kyc === true && branchB.trigger === true && branchB.lora === false
+      && branchC.kyc === true && branchC.trigger === true && branchC.lora === true
+      && text(branchC.adapter_sha256).toLowerCase() === text(adapter.sha256).toLowerCase()
+      && text(loraAttestation.source_sha256).toLowerCase() === text(adapter.sha256).toLowerCase()
+      && Number(loraAttestation.patched_model_key_count || 0) > 0
+      && loraAttestation.all_expected_loaded === true
+      && loraAttestation.all_expected_patched === true
+    )
+    if (!provenanceValid) throw new ApiError(502, 'O worker retornou evidência A/B/C sem proveniência estrutural suficiente para revisão.')
     const assets = providerAssets.map((item) => {
       if (!isPrivateReference(item.r2_bucket, item.r2_key) || !isSha256(item.sha256) || Number(item.byte_size || 0) <= 0) throw new ApiError(502, 'O worker retornou uma evidência privada inválida.')
       return { assetKey: text(item.asset_key), label: text(item.label), kind: text(item.kind), contentType: text(item.content_type), r2Bucket: item.r2_bucket, r2Key: item.r2_key, sha256: text(item.sha256).toLowerCase(), byteSize: Number(item.byte_size), width: Number(item.width || 0), height: Number(item.height || 0), numFrames: Number(item.num_frames || 0), fps: Number(item.fps || 0) || null, durationSeconds: Number(item.duration_seconds || 0) || null }
@@ -280,10 +370,10 @@ export async function refreshActorIdentityPreviewStatus(actorProfileId) {
     if (!reviewable) throw new ApiError(502, 'O kit foi produzido, mas não atende à duração e definição mínimas para conferência.')
     next = {
       ...next, status: 'ready', ready: true, reviewable: true, completedAt: now,
-      previewAssetId: text(kit.qa_kit_id) || randomUUID(), qaKit: { schemaVersion: text(kit.schema_version), assetCount: assets.length, assets, provenance: safeObject(kit.provenance) },
+      previewAssetId: text(kit.qa_kit_id) || randomUUID(), qaKit: { schemaVersion: text(kit.schema_version), assetCount: assets.length, assets, provenance },
       r2Bucket: video.r2Bucket, r2Key: video.r2Key, sha256: video.sha256, byteSize: video.byteSize,
       contentType: video.contentType, width: video.width, height: video.height, numFrames: video.numFrames, fps: video.fps, durationSeconds: video.durationSeconds,
-      privateOnly: true, publicUrl: null, operatorMessage: 'Comparação A/B neutra pronta para conferência.',
+      privateOnly: true, publicUrl: null, operatorMessage: 'Comparação A/B/C estrutural pronta para conferência: A baseline, B referência identitária sem LoRA, C candidato com LoRA.',
     }
   } else if (['FAILED', 'TIMED_OUT'].includes(providerStatus)) {
     const providerError = text(provider.error || safeObject(provider.output).error).slice(0, 500) || providerStatus

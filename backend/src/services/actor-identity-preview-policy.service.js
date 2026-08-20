@@ -1,7 +1,7 @@
 import { env } from '../config/env.js'
 import { ApiError } from '../utils/apiError.js'
 
-const CONTRACT_VERSION = 'privacy-identity-neutral-ab-v1'
+const CONTRACT_VERSION = 'privacy-identity-motion-abc-v1'
 
 function text(value) { return String(value || '').trim() }
 function isUuid(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(value)) }
@@ -28,7 +28,7 @@ export function inspectControlledIdentityPreviewPolicy({ actorProfileId = null, 
   if (!expiresAt) blockers.push('preview_expiry_not_configured')
   if (expiresAt && expiresAt.getTime() <= now.getTime()) blockers.push('preview_window_expired')
   if (Number(env.IDENTITY_LORA_PREVIEW_MAX_JOBS) !== 1) blockers.push('preview_must_allow_exactly_one_job')
-  if (text(env.IDENTITY_LORA_PREVIEW_CONTRACT_VERSION) !== CONTRACT_VERSION) blockers.push('preview_neutral_ab_contract_required')
+  if (text(env.IDENTITY_LORA_PREVIEW_CONTRACT_VERSION) !== CONTRACT_VERSION) blockers.push('preview_motion_abc_contract_required')
   if (env.IDENTITY_LORA_INFERENCE_INJECTION_READY === true) blockers.push('production_inference_must_remain_disabled')
   if (!text(env.IDENTITY_LORA_QA_VIDEO_ENDPOINT_ID)) blockers.push('qa_video_endpoint_not_configured')
   if (text(env.IDENTITY_LORA_NEUTRAL_QA_BUCKET) !== 'privacy-media' || text(env.IDENTITY_LORA_NEUTRAL_QA_KEY) !== 'qa-assets/neutral-motion-01.mp4') blockers.push('neutral_qa_source_not_approved')

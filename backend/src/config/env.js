@@ -174,7 +174,7 @@ const envSchema = z.object({
   IDENTITY_LORA_PREVIEW_ADAPTER_ID: z.string().optional().default(''),
   IDENTITY_LORA_PREVIEW_EXPIRES_AT: z.string().optional().default(''),
   IDENTITY_LORA_PREVIEW_MAX_JOBS: z.coerce.number().int().min(1).max(1).default(1),
-  IDENTITY_LORA_PREVIEW_CONTRACT_VERSION: z.string().default('privacy-identity-neutral-ab-v1'),
+  IDENTITY_LORA_PREVIEW_CONTRACT_VERSION: z.string().default('privacy-identity-motion-abc-v1'),
   IDENTITY_LORA_QA_VIDEO_ENDPOINT_ID: z.string().optional().default(''),
   IDENTITY_LORA_NEUTRAL_QA_BUCKET: z.string().default('privacy-media'),
   IDENTITY_LORA_NEUTRAL_QA_KEY: z.string().default('qa-assets/neutral-motion-01.mp4'),

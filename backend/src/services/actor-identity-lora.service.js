@@ -274,12 +274,18 @@ function buildIdentityReviewSnapshot({ actorProfileId, run = null, adapter = nul
   const qaKitMediaAvailable = visualQaKitAssets.length > 0 && visualQaKitAssets.every((item) => isPrivateObjectReference(item.r2Bucket, item.r2Key))
   const videoValidationPassed = Boolean(
     normalizeText(forensicAudit.status) === 'passed'
-    && normalizeText(futureValidation.profile) === 'video_random_base_ab_v1'
-    && futureValidation.randomBaseVideoUsed === true
-    && futureValidation.motionOnlyControlUsed === true
-    && futureValidation.actorMappingRawRgbControlUsed !== true
-    && futureValidation.baselineWithoutLoraAvailable === true
-    && futureValidation.candidateWithLoraAvailable === true,
+    && normalizeText(futureValidation.profile) === 'video_softedge_abc_v1'
+    && futureValidation.independentNeutralMotionSourceUsed === true
+    && normalizeText(futureValidation.controlRepresentation) === 'softedge_ffmpeg_edgedetect_v1'
+    && futureValidation.appearanceReducedStructuralControlUsed === true
+    && futureValidation.rawRgbControlUsed === false
+    && futureValidation.sameControlAcrossBranches === true
+    && futureValidation.sameSeedAcrossBranches === true
+    && futureValidation.sameSamplerAcrossBranches === true
+    && futureValidation.baselineWithoutIdentityAvailable === true
+    && futureValidation.identityReferenceWithoutLoraAvailable === true
+    && futureValidation.candidateWithLoraAvailable === true
+    && futureValidation.loraIsolationComparisonAvailable === true,
   )
   const visualEvidenceReady = Boolean(
     visualEvidence.ready === true
@@ -348,7 +354,7 @@ function buildIdentityReviewSnapshot({ actorProfileId, run = null, adapter = nul
     message: normalizeText(visualEvidence.operatorMessage) || null,
     reviewable: visualEvidence.reviewable === true,
     mediaAvailable: qaKitMediaAvailable,
-    protectedMediaUrl: qaKitMediaAvailable ? `/api/admin/actors/${actorProfileId}/pipeline/identity-lora/preview-media?asset=video_walk_turn_smile` : null,
+    protectedMediaUrl: qaKitMediaAvailable ? `/api/admin/actors/${actorProfileId}/pipeline/identity-lora/preview-media?asset=candidate_with_lora` : null,
     assetCount: visualQaKitAssets.length,
     assets: visualQaKitAssets.map((item) => ({ assetKey: normalizeText(item.assetKey), label: normalizeText(item.label), kind: normalizeText(item.kind), contentType: normalizeText(item.contentType), mediaAvailable: isPrivateObjectReference(item.r2Bucket, item.r2Key), protectedMediaUrl: `/api/admin/actors/${actorProfileId}/pipeline/identity-lora/preview-media?asset=${encodeURIComponent(normalizeText(item.assetKey))}`, width: Number(item.width || 0) || null, height: Number(item.height || 0) || null, durationSeconds: Number(item.durationSeconds || 0) || null })),
     durationSeconds: Number(visualEvidence.durationSeconds || 0) || null,
@@ -408,38 +414,44 @@ function buildIdentityReviewSnapshot({ actorProfileId, run = null, adapter = nul
       safety: safeObject(trainingTargetAudit.safety),
     },
     videoValidation: {
-      profile: normalizeText(futureValidation.profile) || 'video_random_base_ab_v1',
-      targetUseCases: Array.isArray(futureValidation.targetUseCases) ? futureValidation.targetUseCases : ['prompt_to_video', 'random_base_video_v2v'],
+      profile: normalizeText(futureValidation.profile) || 'video_softedge_abc_v1',
+      targetUseCases: Array.isArray(futureValidation.targetUseCases) ? futureValidation.targetUseCases : ['identity_video_validation', 'video_v2v'],
       currentEvidenceCompatible: videoValidationPassed,
-      requiresRandomBaseVideo: true,
-      requiresMotionOnlyControl: true,
-      actorMappingRawRgbControlAllowed: false,
-      requiresSameSeedBaselineWithoutLora: true,
-      nextPaidTestAllowed: futureValidation.nextPaidTestAllowed === true && videoValidationPassed && trainingTargetCompatible,
+      requiresIndependentNeutralMotionSource: true,
+      requiredControlRepresentation: 'softedge_ffmpeg_edgedetect_v1',
+      requiresAppearanceReducedStructuralControl: true,
+      rawRgbControlAllowed: false,
+      requiresSameControlAcrossBranches: true,
+      requiresSameSeedAcrossBranches: true,
+      requiresIdentityReferenceWithoutLora: true,
+      requiresCandidateWithLora: true,
+      comparisonPriority: 'B_vs_C',
+      nextPaidTestAllowed: false,
       blockers: forensicBlockers,
-      nextAction: normalizeText(futureValidation.reason) || 'Executar primeiro a auditoria sem GPU. O próximo teste pago permanece bloqueado até o contrato de vídeo A/B estar completo.',
+      nextAction: normalizeText(futureValidation.reason) || 'Preparar o kit A/B/C estrutural e, após a geração, executar a auditoria forense sem GPU antes da decisão humana.',
     },
     finalApprovalAllowed: Boolean(technicalPassed && visualEvidenceReady && trainingTargetCompatible && adapter && !adapterRejected),
     finalRejectionAllowed: Boolean(adapter && !adapterApproved && !adapterRejected),
     finalDecision: adapterApproved ? 'approved' : adapterRejected ? 'rejected' : 'pending',
     nextAction: adapterApproved
-      ? 'Integrar a identidade ao runtime de produção de vídeo.'
+      ? 'Integrar a identidade ao runtime de produção somente quando os gates de produto também estiverem autorizados.'
       : adapterRejected
-        ? 'Revisar o motivo e preparar novo treinamento controlado.'
+        ? 'Revisar o motivo e preparar novo treinamento controlado apenas se a rejeição exigir retraining.'
         : normalizeText(trainingTargetAudit.status) === 'not_run'
-          ? 'Auditar o alvo real do treinamento sem GPU antes de qualquer novo treino ou teste pago.'
+          ? 'Auditar o alvo real do treinamento sem GPU antes de qualquer preview.'
           : normalizeText(trainingTargetAudit.status) === 'failed'
-            ? 'O adapter atual está restrito ao ramo VACE e permanece sem comprovação como identidade geral de vídeo.'
-            : normalizeText(forensicAudit.status) === 'not_run'
-              ? 'Executar a auditoria forense sem GPU antes de qualquer novo teste pago.'
-              : normalizeText(forensicAudit.status) === 'failed'
-                ? 'Corrigir o contrato de vídeo com base aleatória. O adapter continua sem comprovação funcional.'
-            : technicalPassed && !visualEvidenceReady
-              ? 'Preparar uma evidência de vídeo A/B com base aleatória antes da aprovação final.'
-              : adapter
-                ? 'Corrigir as pendências técnicas indicadas.'
-                : 'Aguardar o registro do adapter.',
-    lastUpdatedAt: latestIso(adapter?.updated_at, adapter?.created_at, run?.updated_at, run?.completed_at),
+            ? 'Corrigir os bloqueios técnicos do target audit antes de qualquer preview.'
+            : !(visualEvidence.ready === true && visualEvidence.reviewable === true && visualEvidence.status === 'ready')
+              ? 'Preparar uma evidência A/B/C estrutural: A baseline, B KYC+trigger sem LoRA, C igual ao B com LoRA.'
+              : normalizeText(forensicAudit.status) === 'not_run'
+                ? 'Executar a auditoria forense de proveniência A/B/C sem GPU.'
+                : normalizeText(forensicAudit.status) === 'failed'
+                  ? 'Corrigir a proveniência/evidência A/B/C. O adapter permanece sem aprovação.'
+                  : technicalPassed && !visualEvidenceReady
+                    ? 'Revisar os bloqueios de evidência antes da decisão final.'
+                    : adapter
+                      ? 'Comparar visualmente B versus C e decidir a identidade manualmente.'
+                      : 'A identidade ainda não possui um adapter para revisão.',
   }
 }
 
