@@ -10,10 +10,25 @@ import { downloadPrivateObjectToFile } from './storage.service.js'
 
 const RUNS_TABLE = 'actor_identity_training_runs'
 const ADAPTERS_TABLE = 'actor_identity_adapters'
-const AUDIT_SCHEMA_VERSION = 'privacy-identity-training-target-audit-v1'
+const AUDIT_SCHEMA_VERSION = 'privacy-identity-training-target-audit-v2'
 const AUDIT_CONFIRMATION = 'EXECUTAR AUDITORIA DO ALVO DE TREINAMENTO D3.6H4'
 const LEGACY_PROFILE = 'wan_vace_identity_poc_v1'
 const CANDIDATE_PROFILE = 'wan_dit_identity_video_v1'
+const DIT_LORA_BASE_MODEL = 'dit'
+const DIT_REMOVE_PREFIX = 'pipe.dit.'
+const REQUIRED_DIT_TARGET_MODULES = Object.freeze([
+  'cross_attn.q',
+  'cross_attn.k',
+  'cross_attn.v',
+  'cross_attn.o',
+  'ffn.0',
+  'ffn.2',
+])
+const FORBIDDEN_TARGET_MARKERS = Object.freeze([
+  'vace',
+  'vace_blocks',
+  'self_attn',
+])
 
 function text(value) { return String(value || '').trim() }
 function safeObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {} }
@@ -21,6 +36,83 @@ function isPrivateReference(bucket, key) {
   return Boolean(text(bucket) && text(key) && !/^https?:\/\//i.test(text(bucket)) && !/^https?:\/\//i.test(text(key)) && !text(key).startsWith('/'))
 }
 function blocker(code, message, severity = 'critical') { return { code, message, severity } }
+
+function normalizedModuleSet(values) {
+  return new Set((Array.isArray(values) ? values : []).map((item) => text(item).toLowerCase()).filter(Boolean))
+}
+
+function exactModuleSetMatch(actualValues, expectedValues = REQUIRED_DIT_TARGET_MODULES) {
+  const actual = normalizedModuleSet(actualValues)
+  const expected = normalizedModuleSet(expectedValues)
+  return actual.size === expected.size && [...expected].every((item) => actual.has(item))
+}
+
+function keyContainsModule(normalizedKey, moduleName) {
+  const needle = text(moduleName).toLowerCase()
+  return normalizedKey.includes(`.${needle}.`)
+    || normalizedKey.startsWith(`${needle}.`)
+    || normalizedKey.endsWith(`.${needle}`)
+    || normalizedKey === needle
+}
+
+function classifyLoraTargetKeys(keys = []) {
+  const loraKeys = (Array.isArray(keys) ? keys : []).filter((key) => /(?:lora|adapter)/i.test(String(key || '')))
+  const moduleCoverage = Object.fromEntries(
+    REQUIRED_DIT_TARGET_MODULES.map((moduleName) => [moduleName, { present: false, tensorCount: 0 }]),
+  )
+  const forbiddenTargetCounts = Object.fromEntries(
+    FORBIDDEN_TARGET_MARKERS.map((marker) => [marker, 0]),
+  )
+
+  let approvedScopeTensorCount = 0
+  let unknownLoraTensorCount = 0
+
+  for (const rawKey of loraKeys) {
+    const normalized = String(rawKey || '').toLowerCase()
+    const matchedModules = REQUIRED_DIT_TARGET_MODULES.filter((moduleName) => keyContainsModule(normalized, moduleName))
+    const matchedForbidden = FORBIDDEN_TARGET_MARKERS.filter((marker) => normalized.includes(marker))
+
+    for (const moduleName of matchedModules) {
+      moduleCoverage[moduleName].present = true
+      moduleCoverage[moduleName].tensorCount += 1
+    }
+    for (const marker of matchedForbidden) {
+      forbiddenTargetCounts[marker] += 1
+    }
+
+    if (matchedModules.length > 0 && matchedForbidden.length === 0) {
+      approvedScopeTensorCount += 1
+    } else if (matchedModules.length === 0 && matchedForbidden.length === 0) {
+      unknownLoraTensorCount += 1
+    }
+  }
+
+  const missingRequiredModules = REQUIRED_DIT_TARGET_MODULES.filter((moduleName) => moduleCoverage[moduleName].present !== true)
+  const forbiddenTargetPresent = Object.values(forbiddenTargetCounts).some((count) => Number(count) > 0)
+  const generalGeneratorIdentityBranchPresent =
+    loraKeys.length > 0
+    && missingRequiredModules.length === 0
+    && forbiddenTargetPresent === false
+    && unknownLoraTensorCount === 0
+    && approvedScopeTensorCount === loraKeys.length
+
+  const targetFamilies = []
+  if (approvedScopeTensorCount > 0) targetFamilies.push('dit')
+  if (forbiddenTargetCounts.vace > 0 || forbiddenTargetCounts.vace_blocks > 0) targetFamilies.push('vace')
+  if (loraKeys.some((key) => String(key || '').toLowerCase().includes('transformer'))) targetFamilies.push('transformer')
+
+  return {
+    loraTensorCount: loraKeys.length,
+    targetFamilies: [...new Set(targetFamilies)],
+    moduleCoverage,
+    missingRequiredModules,
+    forbiddenTargetCounts,
+    forbiddenTargetPresent,
+    approvedScopeTensorCount,
+    unknownLoraTensorCount,
+    generalGeneratorIdentityBranchPresent,
+  }
+}
 
 async function loadLatestIdentity(actorProfileId) {
   const runResult = await supabaseAdmin.from(RUNS_TABLE).select('*').eq('actor_profile_id', actorProfileId).order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -55,15 +147,22 @@ async function parseSafetensorsHeader(filePath) {
     if (headerRead.bytesRead !== length) throw new Error('header_incomplete')
     const parsed = JSON.parse(headerBuffer.toString('utf8'))
     const keys = Object.keys(parsed).filter((key) => key !== '__metadata__')
-    const loraKeys = keys.filter((key) => /(?:lora|adapter)/i.test(key))
-    const families = [...new Set(keys.map((key) => {
-      const normalized = key.toLowerCase()
-      if (normalized.includes('vace')) return 'vace'
-      if (normalized.includes('dit')) return 'dit'
-      if (normalized.includes('transformer')) return 'transformer'
-      return null
-    }).filter(Boolean))]
-    return { valid: keys.length > 0 && loraKeys.length > 0, tensorCount: keys.length, loraTensorCount: loraKeys.length, targetFamilies: families, keySamples: keys.slice(0, 8), metadataKeys: Object.keys(safeObject(parsed.__metadata__)) }
+    const targetAnalysis = classifyLoraTargetKeys(keys)
+    return {
+      valid: keys.length > 0 && targetAnalysis.loraTensorCount > 0,
+      tensorCount: keys.length,
+      loraTensorCount: targetAnalysis.loraTensorCount,
+      targetFamilies: targetAnalysis.targetFamilies,
+      keySamples: keys.slice(0, 8),
+      metadataKeys: Object.keys(safeObject(parsed.__metadata__)),
+      moduleCoverage: targetAnalysis.moduleCoverage,
+      missingRequiredModules: targetAnalysis.missingRequiredModules,
+      forbiddenTargetCounts: targetAnalysis.forbiddenTargetCounts,
+      forbiddenTargetPresent: targetAnalysis.forbiddenTargetPresent,
+      approvedScopeTensorCount: targetAnalysis.approvedScopeTensorCount,
+      unknownLoraTensorCount: targetAnalysis.unknownLoraTensorCount,
+      generalGeneratorIdentityBranchPresent: targetAnalysis.generalGeneratorIdentityBranchPresent,
+    }
   } finally { await handle.close() }
 }
 
@@ -110,6 +209,7 @@ export async function inspectActorIdentityTrainingTargetAudit(actorProfileId) {
 export async function runActorIdentityTrainingTargetAudit(actorProfileId, { requestedByProfileId = null, confirmation = '', persist = true, verifyPrivate = true } = {}) {
   if (text(confirmation) !== AUDIT_CONFIRMATION) throw new ApiError(422, 'A frase de confirmação da auditoria do alvo de treinamento é inválida.')
   if (persist && !requestedByProfileId) throw new ApiError(401, 'Não foi possível identificar o Admin responsável pela auditoria.')
+
   const { run, adapter } = await loadLatestIdentity(actorProfileId)
   if (!isPrivateReference(adapter.r2_bucket, adapter.r2_key)) throw new ApiError(409, 'O adapter não possui referência privada válida para auditoria.')
 
@@ -124,9 +224,17 @@ export async function runActorIdentityTrainingTargetAudit(actorProfileId, { requ
     loraTensorCount: Number(forensicAdapter.loraTensorCount || 0),
     targetFamilies: Array.isArray(forensicAdapter.targetFamilies) ? forensicAdapter.targetFamilies : [],
     keySamples: Array.isArray(forensicAdapter.keySamples) ? forensicAdapter.keySamples : [],
+    moduleCoverage: safeObject(forensicAdapter.moduleCoverage),
+    missingRequiredModules: Array.isArray(forensicAdapter.missingRequiredModules) ? forensicAdapter.missingRequiredModules : [],
+    forbiddenTargetCounts: safeObject(forensicAdapter.forbiddenTargetCounts),
+    forbiddenTargetPresent: forensicAdapter.forbiddenTargetPresent === true,
+    approvedScopeTensorCount: Number(forensicAdapter.approvedScopeTensorCount || 0),
+    unknownLoraTensorCount: Number(forensicAdapter.unknownLoraTensorCount || 0),
+    generalGeneratorIdentityBranchPresent: forensicAdapter.generalGeneratorIdentityBranchPresent === true,
     sha256Prefix: text(forensicAdapter.sha256Prefix) || text(adapter.sha256).slice(0, 12),
     byteSize: Number(forensicAdapter.byteSize || adapter.byte_size || 0),
   }
+
   let r2ReadCount = 0
   let tempRemoved = true
 
@@ -147,6 +255,13 @@ export async function runActorIdentityTrainingTargetAudit(actorProfileId, { requ
         targetFamilies: header.targetFamilies,
         keySamples: header.keySamples,
         metadataKeys: header.metadataKeys,
+        moduleCoverage: header.moduleCoverage,
+        missingRequiredModules: header.missingRequiredModules,
+        forbiddenTargetCounts: header.forbiddenTargetCounts,
+        forbiddenTargetPresent: header.forbiddenTargetPresent,
+        approvedScopeTensorCount: header.approvedScopeTensorCount,
+        unknownLoraTensorCount: header.unknownLoraTensorCount,
+        generalGeneratorIdentityBranchPresent: header.generalGeneratorIdentityBranchPresent,
         sha256Prefix: actualSha256.slice(0, 12),
         byteSize: Number(fileStat.size),
       }
@@ -155,33 +270,78 @@ export async function runActorIdentityTrainingTargetAudit(actorProfileId, { requ
     }
   }
 
-  const families = new Set((adapterAudit.targetFamilies || []).map((item) => text(item).toLowerCase()))
   const currentProfile = text(env.IDENTITY_LORA_TRAINING_PROFILE) || LEGACY_PROFILE
-  const vaceOnly = families.has('vace') && !families.has('dit') && !families.has('transformer')
+  const runMetadata = safeObject(run.metadata)
+  const targetMetadata = safeObject(runMetadata.stage_2_2d3_6h7)
+  const runTargetProfile = text(targetMetadata.targetProfile) || currentProfile
+  const runTargetModules = Array.isArray(targetMetadata.targetModules) ? targetMetadata.targetModules.map(text).filter(Boolean) : []
+  const vaceFrozen = targetMetadata.vaceFrozen === true
+  const targetModulesMatch = exactModuleSetMatch(runTargetModules)
+
   const blockers = []
+
   if (!adapterAudit.sha256Matched) blockers.push(blocker('ADAPTER_SHA256_MISMATCH', 'O checksum privado do adapter não corresponde ao registro do banco.'))
   if (!adapterAudit.byteSizeMatched) blockers.push(blocker('ADAPTER_BYTE_SIZE_MISMATCH', 'O tamanho privado do adapter não corresponde ao registro do banco.'))
   if (!adapterAudit.safetensorsHeaderValid) blockers.push(blocker('ADAPTER_STRUCTURE_NOT_VERIFIED', 'O cabeçalho safetensors não comprovou tensores LoRA válidos.'))
-  if (currentProfile === LEGACY_PROFILE) blockers.push(blocker('LEGACY_VACE_IDENTITY_PROFILE', 'O treinamento atual usa o perfil legado wan_vace_identity_poc_v1.'))
-  if (vaceOnly) blockers.push(blocker('ADAPTER_TARGETS_VACE_CONTROL_BRANCH_ONLY', 'Os tensores encontrados estão restritos ao ramo de controle VACE; isso não comprova uma identidade geral no gerador de vídeo.'))
-  if (!families.has('dit') && !families.has('transformer')) blockers.push(blocker('GENERAL_VIDEO_IDENTITY_TARGET_MISSING', 'O adapter não contém evidência de tensores de identidade no componente principal de geração de vídeo.'))
-  blockers.push(blocker('CANDIDATE_TRAINING_CONTRACT_NOT_PREFLIGHTED', 'O contrato candidato para identidade de vídeo ainda não passou por preflight estático completo e permanece proibido para execução paga.'))
+  if (currentProfile === LEGACY_PROFILE) blockers.push(blocker('LEGACY_VACE_IDENTITY_PROFILE', 'O ambiente ainda aponta para o perfil legado wan_vace_identity_poc_v1.'))
+  if (currentProfile !== CANDIDATE_PROFILE) blockers.push(blocker('TRAINING_PROFILE_NOT_APPROVED', `O perfil configurado não é ${CANDIDATE_PROFILE}.`))
+  if (runTargetProfile !== CANDIDATE_PROFILE) blockers.push(blocker('RUN_TARGET_PROFILE_MISMATCH', `O run não comprova o perfil ${CANDIDATE_PROFILE}.`))
+  if (vaceFrozen !== true) blockers.push(blocker('VACE_CONTROL_BRANCH_NOT_FROZEN', 'O metadata do run não comprova VACE congelado durante o treinamento DiT.'))
+  if (!targetModulesMatch) blockers.push(blocker('DIT_TARGET_MODULE_CONTRACT_MISMATCH', 'Os módulos-alvo registrados no run não correspondem ao conjunto DiT homologado.'))
+  if (adapterAudit.forbiddenTargetPresent === true) blockers.push(blocker('FORBIDDEN_LORA_TARGET_PRESENT', 'O adapter contém tensores LoRA em ramo proibido (VACE/VACE blocks/self-attention).'))
+  if (Number(adapterAudit.unknownLoraTensorCount || 0) > 0) blockers.push(blocker('UNEXPECTED_LORA_TARGET_PRESENT', 'O adapter contém tensores LoRA fora dos módulos DiT homologados.'))
+  if (Array.isArray(adapterAudit.missingRequiredModules) && adapterAudit.missingRequiredModules.length > 0) {
+    blockers.push(blocker('GENERAL_VIDEO_IDENTITY_TARGET_MISSING', `Faltam módulos DiT obrigatórios: ${adapterAudit.missingRequiredModules.join(', ')}.`))
+  }
+  if (adapterAudit.generalGeneratorIdentityBranchPresent !== true) {
+    blockers.push(blocker('GENERAL_VIDEO_IDENTITY_TARGET_NOT_VERIFIED', 'O arquivo não comprovou cobertura integral e exclusiva dos módulos DiT homologados.'))
+  }
 
+  const dedupedBlockers = [...new Map(blockers.map((item) => [item.code, item])).values()]
+  const technicalPassed = dedupedBlockers.length === 0
   const now = new Date().toISOString()
+  const candidateContract = {
+    profile: CANDIDATE_PROFILE,
+    status: technicalPassed ? 'preflight_passed' : 'preflight_failed',
+    identityTargetComponentCandidate: DIT_LORA_BASE_MODEL,
+    controlTargetComponent: 'vace',
+    componentsMustRemainSeparated: true,
+    requiresRandomBaseVideo: true,
+    requiresMotionOnlyControl: true,
+    requiresSameSeedBaselineWithoutLora: true,
+    requiresCandidateWithLora: true,
+    requiresStaticContractPreflight: true,
+    requiresRuntimeDryRunPreflight: true,
+    paidExecutionApproved: technicalPassed,
+  }
+
+  const adapterContentRequiresNewTraining = dedupedBlockers.some((item) => [
+    'ADAPTER_SHA256_MISMATCH',
+    'ADAPTER_BYTE_SIZE_MISMATCH',
+    'ADAPTER_STRUCTURE_NOT_VERIFIED',
+    'FORBIDDEN_LORA_TARGET_PRESENT',
+    'UNEXPECTED_LORA_TARGET_PRESENT',
+    'GENERAL_VIDEO_IDENTITY_TARGET_MISSING',
+    'GENERAL_VIDEO_IDENTITY_TARGET_NOT_VERIFIED',
+  ].includes(item.code))
+
   const audit = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
-    status: 'failed',
-    verdict: 'current_vace_control_adapter_not_general_video_identity_proven',
+    status: technicalPassed ? 'passed' : 'failed',
+    verdict: technicalPassed ? 'wan_dit_identity_target_verified' : 'wan_dit_identity_target_not_verified',
     executedAt: now,
     executedByProfileId: requestedByProfileId || null,
     currentTraining: {
       contractVersion: text(env.IDENTITY_LORA_TRAINER_CONTRACT_VERSION),
       profile: currentProfile,
+      runTargetProfile,
       modelRepository: text(run.base_model || adapter.base_model || env.IDENTITY_LORA_BASE_MODEL),
       modelFingerprintPrefix: text(run.base_model_fingerprint || adapter.base_model_fingerprint).slice(0, 12) || null,
       sourceAuditedCommand: {
-        loraBaseModel: 'vace',
-        removePrefixInCheckpoint: 'pipe.vace.',
+        loraBaseModel: DIT_LORA_BASE_MODEL,
+        removePrefixInCheckpoint: DIT_REMOVE_PREFIX,
+        vaceFrozen,
+        targetModules: runTargetModules,
         dataFileKeys: ['video', 'vace_video', 'vace_reference_image'],
         extraInputs: ['vace_video', 'vace_reference_image'],
       },
@@ -190,28 +350,15 @@ export async function runActorIdentityTrainingTargetAudit(actorProfileId, { requ
     compatibility: {
       promptToVideoIdentityProven: false,
       randomBaseVideoV2vIdentityProven: false,
-      vaceControlBranchPresent: families.has('vace'),
-      generalGeneratorIdentityBranchPresent: families.has('dit') || families.has('transformer'),
+      vaceControlBranchPresent: adapterAudit.forbiddenTargetPresent === true,
+      generalGeneratorIdentityBranchPresent: technicalPassed && adapterAudit.generalGeneratorIdentityBranchPresent === true,
       actorMappingRawRgbControlAllowed: false,
       currentAdapterReusableForProduction: false,
-      newTrainingRequired: true,
+      newTrainingRequired: technicalPassed ? false : adapterContentRequiresNewTraining,
       newTrainingStarted: false,
     },
-    candidateContract: {
-      profile: CANDIDATE_PROFILE,
-      status: 'design_candidate_only',
-      identityTargetComponentCandidate: 'dit',
-      controlTargetComponent: 'vace',
-      componentsMustRemainSeparated: true,
-      requiresRandomBaseVideo: true,
-      requiresMotionOnlyControl: true,
-      requiresSameSeedBaselineWithoutLora: true,
-      requiresCandidateWithLora: true,
-      requiresStaticContractPreflight: true,
-      requiresRuntimeDryRunPreflight: true,
-      paidExecutionApproved: false,
-    },
-    blockers: [...new Map(blockers.map((item) => [item.code, item])).values()],
+    candidateContract,
+    blockers: dedupedBlockers,
     nextPaidTestAllowed: false,
     safety: {
       databaseReadExecuted: true,
@@ -233,19 +380,33 @@ export async function runActorIdentityTrainingTargetAudit(actorProfileId, { requ
   }
 
   if (persist) {
-    const update = await supabaseAdmin.from(ADAPTERS_TABLE).update({ qa_report: { ...qaReport, trainingTargetAudit: audit }, updated_at: now }).eq('id', adapter.id).eq('actor_profile_id', actorProfileId).eq('training_run_id', run.id).select('id, status, qa_status').single()
+    const update = await supabaseAdmin
+      .from(ADAPTERS_TABLE)
+      .update({ qa_report: { ...qaReport, trainingTargetAudit: audit }, updated_at: now })
+      .eq('id', adapter.id)
+      .eq('actor_profile_id', actorProfileId)
+      .eq('training_run_id', run.id)
+      .select('id, status, qa_status')
+      .single()
+
     if (update.error) throw new ApiError(500, 'Erro ao registrar a auditoria do alvo de treinamento.', update.error)
-    if (text(update.data?.status) !== 'qa_pending' || text(update.data?.qa_status) !== 'pending') throw new ApiError(409, 'A auditoria foi registrada, mas o adapter não permaneceu em qa_pending. Não execute treino nem aprovação antes de revisar o banco.')
+    if (text(update.data?.status) !== 'qa_pending' || text(update.data?.qa_status) !== 'pending') {
+      throw new ApiError(409, 'A auditoria foi registrada, mas o adapter não permaneceu em qa_pending. Não execute treino nem aprovação antes de revisar o banco.')
+    }
   }
 
   return {
-    status: 'STAGE_2_2D3_6H4_TRAINING_TARGET_AUDIT_FAILED_SAFE',
+    status: technicalPassed
+      ? 'STAGE_2_2D3_6H4_TRAINING_TARGET_AUDIT_PASSED'
+      : 'STAGE_2_2D3_6H4_TRAINING_TARGET_AUDIT_FAILED_SAFE',
     actorProfileId,
     trainingRunId: run.id,
     adapterId: adapter.id,
     trainingTargetAudit: publicAuditSnapshot(audit),
     nextPaidTestAllowed: false,
-    nextAction: 'Manter o adapter em qa_pending. Preparar o contrato candidato de identidade de vídeo em uma etapa separada, ainda sem GPU.',
+    nextAction: technicalPassed
+      ? 'Alvo DiT comprovado. Manter o adapter em qa_pending e executar a auditoria forense/evidência visual antes de qualquer aprovação ou teste pago.'
+      : 'Manter o adapter em qa_pending. Corrigir apenas os bloqueios técnicos comprovados antes de qualquer novo treino.',
     safety: audit.safety,
   }
 }
@@ -254,4 +415,7 @@ export {
   AUDIT_CONFIRMATION as IDENTITY_TRAINING_TARGET_AUDIT_CONFIRMATION,
   LEGACY_PROFILE as LEGACY_IDENTITY_TRAINING_PROFILE,
   CANDIDATE_PROFILE as CANDIDATE_IDENTITY_TRAINING_PROFILE,
+  REQUIRED_DIT_TARGET_MODULES,
+  FORBIDDEN_TARGET_MARKERS,
+  classifyLoraTargetKeys as classifyIdentityLoraTargetKeysForAudit,
 }
